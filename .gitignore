@@ -1,0 +1,40 @@
+# Secrets & Environment Variables (NEVER COMMIT)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+service-account*.json
+
+# Local Hackathon Reference Docs & OS Metadata
+*.pdf
+.DS_Store
+Thumbs.db
+
+# Python / uv Virtual Environments & Caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Runtime Session Artifacts & Raw Eval Media Cache
+backend/.sessions/
+eval/data/
+eval/tmp/
+*.log
+
+# Node / Next.js (Frontend Teammate Protection)
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/

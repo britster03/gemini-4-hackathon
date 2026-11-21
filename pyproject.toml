@@ -1,0 +1,28 @@
+[project]
+name = "clearbuy-backend"
+version = "0.1.0"
+description = "ClearBuy (Datum) — Verified Spatial Commerce Compiler (Engineer B: FastAPI SSE, Shop MCP/UCP, Nano Banana 2.1, Decisions API QA & NYU Eval)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=3.2.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-multipart>=0.0.12",
+    "httpx>=0.27.2",
+    "pydantic>=2.9.0",
+    "python-dotenv>=1.0.1",
+    "pillow>=10.4.0",
+    "numpy>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]

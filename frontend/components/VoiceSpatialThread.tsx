@@ -252,84 +252,89 @@ export function VoiceSpatialThread({
         </div>
       )}
 
-      {/* Compact Single Horizontal Bar with Live Audio Waveform */}
-      <form onSubmit={handleSubmit} className="p-2 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="h-8 w-8 rounded-full bg-at-bg border border-at-border flex items-center justify-center text-at-muted hover:text-at-ink shrink-0 cursor-pointer"
-          title="Toggle spatial thread"
-        >
-          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-        </button>
+      {/* Spacious Single Horizontal Bar with Live Audio Waveform */}
+      <form onSubmit={handleSubmit} className="p-3">
+        <div className="flex items-center gap-2.5 rounded-full bg-at-bg border border-at-border px-2.5 py-2 shadow-xs">
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            className="h-10 w-10 rounded-full bg-at-card border border-at-border flex items-center justify-center text-at-muted hover:text-at-ink shrink-0 cursor-pointer"
+            title="Toggle spatial thread"
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </button>
 
-        <button
-          type="button"
-          onMouseDown={startMic}
-          onMouseUp={stopMic}
-          onMouseLeave={() => isListening && stopMic()}
-          onTouchStart={startMic}
-          onTouchEnd={stopMic}
-          className={`h-8 px-2.5 rounded-full flex items-center gap-1.5 border transition-colors shrink-0 cursor-pointer ${
-            isListening
-              ? "bg-at-cyan/15 border-at-cyan text-at-cyan"
-              : "bg-at-bg border-at-border text-at-cyan hover:border-at-cyan"
-          }`}
-          title="Hold to speak"
-        >
-          {micDenied ? (
-            <MicOff className="h-3.5 w-3.5 text-at-notice" />
-          ) : isListening ? (
-            <span className="flex items-center gap-0.5 h-3.5 px-0.5">
-              {[0, 1, 2].map((bar) => (
-                <span
-                  key={bar}
-                  className="w-0.5 h-full bg-at-cyan rounded-full animate-datum-wave"
-                  style={{ animationDelay: `${bar * 120}ms` }}
-                />
-              ))}
+          <button
+            type="button"
+            onMouseDown={startMic}
+            onMouseUp={stopMic}
+            onMouseLeave={() => isListening && stopMic()}
+            onTouchStart={startMic}
+            onTouchEnd={stopMic}
+            className={`h-10 px-3.5 rounded-full flex items-center gap-1.5 border transition-colors shrink-0 cursor-pointer ${
+              isListening
+                ? "bg-at-cyan/15 border-at-cyan text-at-cyan"
+                : "bg-at-card border-at-border text-at-cyan hover:border-at-cyan"
+            }`}
+            title="Hold to speak"
+          >
+            {micDenied ? (
+              <MicOff className="h-4 w-4 text-at-notice" />
+            ) : isListening ? (
+              <span className="flex items-center gap-0.5 h-4 px-0.5">
+                {[0, 1, 2].map((bar) => (
+                  <span
+                    key={bar}
+                    className="w-0.5 h-full bg-at-cyan rounded-full animate-datum-wave"
+                    style={{ animationDelay: `${bar * 120}ms` }}
+                  />
+                ))}
+              </span>
+            ) : (
+              <Mic className="h-4 w-4" />
+            )}
+            <span className="hidden sm:inline text-xs font-medium">
+              {isListening ? "Listening…" : "Speak"}
             </span>
-          ) : (
-            <Mic className="h-3.5 w-3.5" />
+          </button>
+
+          {scopeChipLabel && (
+            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-at-cyan/12 border border-at-cyan/40 text-xs font-mono text-at-cyan shrink-0">
+              {scopeChipLabel}
+              <button
+                type="button"
+                onClick={onClearPin}
+                className="hover:opacity-75 cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
           )}
-          <span className="hidden sm:inline text-[11px] font-medium">
-            {isListening ? "Listening…" : "Speak"}
-          </span>
-        </button>
 
-        {scopeChipLabel && (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-at-cyan/12 border border-at-cyan/40 text-[11px] font-mono text-at-cyan shrink-0">
-            {scopeChipLabel}
-            <button
-              type="button"
-              onClick={onClearPin}
-              className="hover:opacity-75 cursor-pointer"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </span>
-        )}
+          <input
+            type="text"
+            value={input}
+            onFocus={() => setExpanded(true)}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder='Ask to swap any item (e.g., "Swap chair for warmer cream under $180")'
+            className="flex-1 bg-transparent text-sm sm:text-base text-at-ink placeholder:text-at-muted focus:outline-none min-w-0 px-1"
+          />
 
-        <input
-          type="text"
-          value={input}
-          onFocus={() => setExpanded(true)}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder='Talk to swap (e.g., "Swap chair for warmer cream under $180" or "Put a 72-inch desk there")'
-          className="flex-1 bg-transparent text-xs text-at-ink placeholder:text-at-muted focus:outline-none min-w-0"
-        />
-
-        <button
-          type="submit"
-          disabled={isSending || !input.trim()}
-          className="h-8 px-3.5 rounded-full bg-at-cyan hover:opacity-95 disabled:opacity-40 text-[#0C0D10] text-xs font-semibold inline-flex items-center gap-1 shrink-0 cursor-pointer"
-        >
-          {isSending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Send className="h-3.5 w-3.5" />
-          )}
-        </button>
+          <button
+            type="submit"
+            disabled={isSending || !input.trim()}
+            className="h-10 px-4 rounded-full bg-at-cyan hover:opacity-95 disabled:opacity-40 text-[#0C0D10] text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            {isSending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <span>Send</span>
+                <Send className="h-3.5 w-3.5" />
+              </>
+            )}
+          </button>
+        </div>
       </form>
     </div>
   );

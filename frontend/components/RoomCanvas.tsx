@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
   GripVertical,
   Layers,
+  Maximize2,
   ShieldAlert,
   Sparkles,
+  X,
 } from "lucide-react";
 import type {
   DetectedZone,
@@ -68,6 +70,16 @@ export function RoomCanvas({
 }: RoomCanvasProps) {
   const [wipePct, setWipePct] = useState(100);
   const [isWiping, setIsWiping] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isFullscreen]);
 
   const activeVersion =
     versions.find((v) => v.version_id === activeVersionId) ||
@@ -107,18 +119,16 @@ export function RoomCanvas({
           )}
 
           {scaleData?.calibration_layer === "layer2_depth_exif" && (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-notice/12 border border-at-notice/50 text-[11px] font-mono text-at-notice">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-notice/12 border border-at-notice/50 text-[11px] text-at-notice">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              {scaleData.fallback_badge ||
-                `No anchor found · Depth-Anything-V2 + EXIF ${scaleData.exif_focal_mm ?? 26}mm (±${scaleData.tolerance_in}")`}
+              Estimated Scale
             </div>
           )}
 
           {(scaleData?.foreshortening_warning || scaleData?.skew_warning) && (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-notice/12 border border-at-notice/55 text-[11px] font-mono text-at-notice">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-notice/12 border border-at-notice/55 text-[11px] text-at-notice">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              {scaleData.skew_warning ||
-                `Multi-anchor skew >15% (${(scaleData.cross_anchor_skew_pct ?? 18).toFixed(0)}%)`}
+              Perspective skew noted
             </div>
           )}
 
@@ -126,9 +136,9 @@ export function RoomCanvas({
             scaleData.calibration_layer === "layer1_anchor" &&
             !scaleData.foreshortening_warning &&
             !scaleData.skew_warning && (
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono tabular-nums-strict text-at-emerald">
+              <div className="inline-flex items-center gap-1.5 text-[11px] text-at-emerald font-medium">
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Layer 1 Anchor Lock (±{scaleData.tolerance_in}&quot;)
+                Room Measured
               </div>
             )}
         </div>
@@ -158,7 +168,7 @@ export function RoomCanvas({
           })}
         </div>
 
-        {/* Right: Version Pills (v1 -> v2) */}
+        {/* Right: Version Pills (v1 -> v2) + Expand Fullscreen */}
         <div className="flex items-center gap-1.5">
           {versions.length > 0 && (
             <div className="flex items-center gap-1 p-0.5 rounded-lg bg-at-bg border border-at-border">
@@ -183,6 +193,16 @@ export function RoomCanvas({
               ))}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(true)}
+            title="Expand room view"
+            className="p-1.5 rounded-lg bg-at-bg border border-at-border hover:border-at-cyan text-at-muted hover:text-at-ink cursor-pointer transition-colors"
+            aria-label="Expand room view"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
@@ -210,7 +230,7 @@ export function RoomCanvas({
           <img
             src={originalImageUrl}
             alt="Original room"
-            className={`w-full h-full object-cover transition-all duration-300 ${
+            className={`w-full h-full object-contain transition-all duration-300 ${
               isRendering && !hasRender ? "brightness-85" : "brightness-100"
             }`}
           />
@@ -228,7 +248,7 @@ export function RoomCanvas({
                 <img
                   src={activeVersion.image_url}
                   alt={activeVersion.label}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                 />
               </div>
 
@@ -297,12 +317,53 @@ export function RoomCanvas({
             <div className="absolute inset-0 flex items-center justify-center bg-black/25">
               <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-at-card/95 border border-at-cyan/50 text-xs font-mono text-at-cyan shadow-xl">
                 <Sparkles className="h-4 w-4 animate-spin" />
-                Detecting room anchors &amp; calibrating CAD scale…
+                Calibrating room space…
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Full-Screen Room Lightbox Modal */}
+      {isFullscreen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex flex-col p-4 sm:p-6"
+          onClick={() => setIsFullscreen(false)}
+        >
+          <div className="flex items-center justify-between pb-3 text-white">
+            <span className="text-xs font-medium text-white/80">
+              {viewMode === "rendered" && activeVersion
+                ? `Rendered Room (${activeVersion.version_id})`
+                : viewMode === "blueprint"
+                ? "Measured Blueprint"
+                : "Original Room Photo"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(false)}
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+              aria-label="Close full screen"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div
+            className="flex-1 min-h-0 flex items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={
+                viewMode === "rendered" && activeVersion
+                  ? activeVersion.image_url
+                  : originalImageUrl
+              }
+              alt="Full-screen room view"
+              className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

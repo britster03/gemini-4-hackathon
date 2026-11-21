@@ -370,11 +370,36 @@ function normalizeCartReady(raw: any): CartReadyEvent {
     ? raw.items
     : [];
 
+  const altsBySku: Record<string, AlternativeSKUCard[]> = {};
+  if (raw.alternatives_by_sku && typeof raw.alternatives_by_sku === "object") {
+    Object.entries(raw.alternatives_by_sku).forEach(([skuId, cards]) => {
+      if (Array.isArray(cards)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        altsBySku[skuId] = cards.map((c: any) => ({
+          sku_id: String(c.sku?.sku_id ?? c.sku_id ?? ""),
+          shopify_gid: String(c.sku?.gid ?? c.shopify_gid ?? ""),
+          title: String(c.sku?.title ?? c.title ?? "Alternative SKU"),
+          merchant: String(c.sku?.merchant_name ?? c.merchant ?? "Shopify Store"),
+          price_usd: Number(c.sku?.price_usd ?? c.price_usd ?? 0),
+          price_delta_usd: Number(c.price_delta_usd ?? 0),
+          width_in: c.sku?.dimensions?.width_in ?? c.width_in ?? null,
+          fit_delta_label: String(c.delta_badge ?? c.fit_delta_label ?? ""),
+          hook_blocked: Boolean(c.hook_blocked),
+          block_reason: c.block_reason ?? null,
+          image_url: String(c.sku?.image_url ?? c.image_url ?? ""),
+          zone_id: String(c.target_zone_id ?? c.zone_id ?? "zone_1"),
+          target_item_id: String(c.target_item_id ?? skuId),
+        }));
+      }
+    });
+  }
+
   return {
     status: raw.status === "safe_refusal" ? "safe_refusal" : "verified",
     refusal_reason: raw.refusal_reason ?? null,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     items: itemsRaw.map((s: any, idx: number) => normalizeShopifySKU(s, idx)),
+    alternatives_by_sku: altsBySku,
     total_usd: Number(raw.total_usd ?? 0),
     budget_usd: Number(raw.budget_usd ?? 450),
     checkouts: normalizeCheckouts(raw.checkouts ?? []),

@@ -636,6 +636,17 @@ export default function DatumStudioPage() {
           </section>
 
           <aside className="w-full lg:w-[36%] h-[45%] lg:h-full flex flex-col min-h-0 bg-at-card">
+            {/* Live 4-Stage Glass-Box Verification Strip (Zero Black Box!) */}
+            <GlassBoxRail
+              scaleData={scaleData}
+              catalogData={catalogData}
+              hookData={hookData}
+              cartData={cartData}
+              decisionsQA={activeVersion?.decisions_qa ?? null}
+              isStreaming={isStreaming}
+              elapsedSec={elapsedSec}
+            />
+
             <ShopifyCommerceRail
               cartData={cartData}
               budgetUsd={budgetUsd}
@@ -646,6 +657,7 @@ export default function DatumStudioPage() {
               onHoverItem={setHoveredItemId}
               onSelectVariant={handleSelectVariant}
               onRerenderVariant={handleRerenderVariant}
+              onSelectAlternative={handleSelectAlternative}
               onRequestSwapForItem={handleRequestSwapForItem}
             />
           </aside>

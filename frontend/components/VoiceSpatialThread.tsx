@@ -93,6 +93,13 @@ export function VoiceSpatialThread({
     .reverse()
     .find((m) => m.alternatives && m.alternatives.length > 0);
 
+  // Auto-expand the thread whenever fresh alternatives arrive from clicking a pin or speaking
+  useEffect(() => {
+    if (latestWithAlts) {
+      setExpanded(true);
+    }
+  }, [latestWithAlts?.id]);
+
   const scopeChipLabel = pinnedItem
     ? `@${formatZoneLabel(pinnedItem.zone_id)} · ${pinnedItem.category}`
     : pinnedZone

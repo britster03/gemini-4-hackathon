@@ -11,7 +11,11 @@ import {
   Store,
   X,
 } from "lucide-react";
-import type { CartReadyEvent, VerifiedCartItem } from "@/types/clearbuy";
+import type {
+  AlternativeSKUCard,
+  CartReadyEvent,
+  VerifiedCartItem,
+} from "@/types/clearbuy";
 
 interface ShopifyCommerceRailProps {
   cartData: CartReadyEvent | null;
@@ -23,6 +27,7 @@ interface ShopifyCommerceRailProps {
   onHoverItem: (itemId: string | null) => void;
   onSelectVariant: (itemId: string, variantId: string) => void;
   onRerenderVariant: (item: VerifiedCartItem) => void;
+  onSelectAlternative: (alt: AlternativeSKUCard) => void;
   onRequestSwapForItem: (item: VerifiedCartItem, promptOverride?: string) => void;
 }
 
@@ -36,11 +41,13 @@ export function ShopifyCommerceRail({
   onHoverItem,
   onSelectVariant,
   onRerenderVariant,
+  onSelectAlternative,
   onRequestSwapForItem,
 }: ShopifyCommerceRailProps) {
   const [previewItem, setPreviewItem] = useState<VerifiedCartItem | null>(null);
   const [previewPhotoIdx, setPreviewPhotoIdx] = useState<number>(0);
   const [activeSkuTab, setActiveSkuTab] = useState<string>("all");
+  const [expandedAltIds, setExpandedAltIds] = useState<Record<string, boolean>>({});
   const [activePhotoByItem, setActivePhotoByItem] = useState<Record<string, number>>({});
   const [dirtyVariantItems, setDirtyVariantItems] = useState<Record<string, boolean>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -334,14 +341,104 @@ export function ShopifyCommerceRail({
 
                     <button
                       type="button"
-                      onClick={() => onRequestSwapForItem(item)}
+                      onClick={() => {
+                        const preAlts =
+                          cartData?.alternatives_by_sku?.[item.sku_id] ||
+                          cartData?.alternatives_by_sku?.[item.item_id] ||
+                          [];
+                        if (preAlts.length > 0) {
+                          setExpandedAltIds((prev) => ({
+                            ...prev,
+                            [item.item_id]: !prev[item.item_id],
+                          }));
+                        } else {
+                          onRequestSwapForItem(item);
+                        }
+                      }}
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-at-card border border-at-border hover:border-at-cyan text-xs font-medium text-at-ink cursor-pointer"
                     >
                       <RefreshCw className="h-3 w-3 text-at-cyan" />
-                      Alternatives &amp; Swap
+                      {(() => {
+                        const cnt = (
+                          cartData?.alternatives_by_sku?.[item.sku_id] ||
+                          cartData?.alternatives_by_sku?.[item.item_id] ||
+                          []
+                        ).length;
+                        return cnt > 0 ? `Alternatives (${cnt})` : "Find Alternatives";
+                      })()}
                     </button>
                   </div>
                 </div>
+
+                {/* Inline Pre-Vetted Alternatives Visual Strip (auto-open on individual SKU tab or toggle) */}
+                {(() => {
+                  const preAlts =
+                    cartData?.alternatives_by_sku?.[item.sku_id] ||
+                    cartData?.alternatives_by_sku?.[item.item_id] ||
+                    [];
+                  const showAlts =
+                    preAlts.length > 0 &&
+                    (activeSkuTab === item.item_id || Boolean(expandedAltIds[item.item_id]));
+                  if (!showAlts) return null;
+                  return (
+                    <div className="pt-2 border-t border-at-border space-y-2">
+                      <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-at-muted">
+                        <span>Pre-Vetted Alternatives ({preAlts.length})</span>
+                        <span>1-Click Surgical Swap</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {preAlts.map((alt) => (
+                          <div
+                            key={alt.sku_id}
+                            className={`rounded-lg p-2 bg-at-card border flex flex-col justify-between gap-2 ${
+                              alt.hook_blocked ? "border-at-coral/60 opacity-85" : "border-at-border"
+                            }`}
+                          >
+                            <div className="flex gap-2">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={alt.image_url}
+                                alt={alt.title}
+                                className="h-12 w-12 rounded-md object-cover border border-at-border shrink-0 bg-at-bg"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-medium text-at-ink line-clamp-2 leading-snug">
+                                  {alt.title}
+                                </p>
+                                <p className="text-[10px] font-mono text-at-muted mt-0.5">
+                                  ${alt.price_usd.toFixed(2)} · {alt.merchant}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span
+                                className={`text-[10px] font-mono truncate ${
+                                  alt.hook_blocked ? "text-at-coral" : "text-at-emerald"
+                                }`}
+                              >
+                                {alt.fit_delta_label}
+                              </span>
+                              {alt.hook_blocked ? (
+                                <span className="px-2 py-0.5 rounded bg-at-coral/15 text-at-coral text-[10px] font-mono shrink-0">
+                                  Blocked
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={isSwapping}
+                                  onClick={() => onSelectAlternative(alt)}
+                                  className="px-2 py-0.5 rounded bg-at-cyan text-[#0C0D10] text-[10px] font-semibold hover:opacity-90 disabled:opacity-50 cursor-pointer shrink-0"
+                                >
+                                  {isSwapping ? "Swapping…" : "Swap into Room"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}

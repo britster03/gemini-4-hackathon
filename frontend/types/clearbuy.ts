@@ -137,6 +137,7 @@ export interface CartReadyEvent {
   status?: "verified" | "safe_refusal";
   refusal_reason?: string | null;
   items: VerifiedCartItem[];
+  alternatives_by_sku?: Record<string, AlternativeSKUCard[]>;
   total_usd: number;
   budget_usd: number;
   checkouts: MerchantCheckout[];

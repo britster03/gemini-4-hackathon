@@ -527,15 +527,9 @@ export default function DatumStudioPage() {
           )}
         </div>
 
-        {/* Center: Official Sponsor Strip on Capture OR Studio Scope Chip */}
+        {/* Center: Always-Visible Official Sponsor Bar (Google Gemini & Shopify) */}
         <div className="hidden md:flex items-center gap-2.5">
-          {appPhase === "studio" ? (
-            <span className="px-2.5 py-1 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono text-at-muted">
-              {scaleData?.scope_label ?? "Calibrating Space…"}
-            </span>
-          ) : (
-            <PoweredByBar compact />
-          )}
+          <PoweredByBar compact />
         </div>
 
         {/* Right: Budget Progress + Light/Dark Toggle */}
@@ -614,6 +608,7 @@ export default function DatumStudioPage() {
               }}
               onOverrideZoneWidth={handleOverrideZoneWidth}
               isRendering={isStreaming}
+              isSwapping={isSwapping}
               isRepairing={isRepairing}
               angleTabs={angleTabs}
               activeAngleId={activeAngleId}

@@ -939,6 +939,8 @@ def build_sku_tabs_and_alternatives(
         for cand in pool:
             if cand.sku_id == active.sku_id or cand.gid == active.gid:
                 continue
+            if not cand.image_url or not cand.image_url.startswith("http"):
+                continue
             cand_copy = cand.model_copy(deep=True)
             cand_copy.zone_id = zid
             hypo_cart = [

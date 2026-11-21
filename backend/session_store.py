@@ -46,6 +46,9 @@ class SpatialSession:
     versions: list[RenderVersion] = field(default_factory=list)
     last_render_interaction_id: str | None = None
     last_render_bytes: bytes | None = None
+    prewarmed_swaps: dict[tuple[str, str], tuple[bytes, str, str | None, Any]] = field(
+        default_factory=dict
+    )
     last_thread_alternatives: list[ThreadAlternativeCard] = field(default_factory=list)
 
     pending_confirmation_token: str | None = None

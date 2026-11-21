@@ -36,6 +36,7 @@ interface RoomCanvasProps {
   onSelectZone: (zone: DetectedZone) => void;
   onOverrideZoneWidth: (zone: DetectedZone, newWidthIn: number) => void;
   isRendering: boolean;
+  isSwapping?: boolean;
   isRepairing: boolean;
   angleTabs?: { id: string; label: string; imageUrl: string }[];
   activeAngleId?: string;
@@ -63,6 +64,7 @@ export function RoomCanvas({
   onSelectZone,
   onOverrideZoneWidth,
   isRendering,
+  isSwapping = false,
   isRepairing,
   angleTabs,
   activeAngleId,
@@ -312,12 +314,14 @@ export function RoomCanvas({
             />
           )}
 
-          {/* Initial Calibrating Status Pill */}
-          {!scaleData && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-              <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-at-card/95 border border-at-cyan/50 text-xs font-mono text-at-cyan shadow-xl">
+          {/* Initial Calibrating OR Live Surgical Swap / Finish Re-Render Status Pill */}
+          {(!scaleData || isSwapping) && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/35 backdrop-blur-[1px]">
+              <div className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-at-card/95 border border-at-cyan/60 text-xs font-mono text-at-cyan shadow-2xl">
                 <Sparkles className="h-4 w-4 animate-spin" />
-                Calibrating room space…
+                {isSwapping
+                  ? "Re-rendering room with Nano Banana 2.1 + Decisions QA…"
+                  : "Calibrating room space…"}
               </div>
             </div>
           )}

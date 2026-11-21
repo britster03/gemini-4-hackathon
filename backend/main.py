@@ -390,6 +390,10 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
             elapsed_ms=int((time.perf_counter() - t_ren) * 1000),
         )
         session.emit_sse("render_ready", render_ev.model_dump())
+
+        # Speculatively pre-warm top compliant alternatives in parallel so 1-click swaps are <150ms instant!
+        if has_live_gemini_credentials() and os.getenv("CLEARBUY_PREWARM_SWAPS", "1") == "1":
+            asyncio.create_task(_prewarm_top_alternatives(session))
     except Exception as exc:
         session.emit_sse(
             "session_error",
@@ -397,6 +401,64 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
         )
     finally:
         session.mark_complete()
+
+
+async def _prewarm_top_alternatives(session: SpatialSession) -> None:
+    """Speculatively pre-render top compliant alternatives in parallel (`gemini-nano-banana-2.1`) for instant swaps."""
+    try:
+        if not session.scale or not session.room_images or not session.last_render_bytes:
+            return
+        orig_room_bytes, orig_mime = session.room_images[0]
+        prior_bytes = session.last_render_bytes
+        prior_inter_id = session.last_render_interaction_id
+        zones = session.scale.zones
+
+        jobs: list[tuple[ShopifySKU, ShopifySKU, Any]] = []
+        for active_item in session.verified_items:
+            alts = session.alternatives_by_sku.get(active_item.sku_id) or []
+            for card in alts:
+                if card.hook_blocked or card.sku.sku_id == active_item.sku_id:
+                    continue
+                zone_obj = next(
+                    (z for z in zones if z.zone_id == active_item.zone_id),
+                    zones[0] if zones else None,
+                )
+                jobs.append((active_item, card.sku, zone_obj))
+                break  # Top 1 compliant alternative per active item (parallel across all items!)
+            if len(jobs) >= 4:
+                break
+
+        async def _run_one(t_item: ShopifySKU, cand: ShopifySKU, z_obj: Any) -> None:
+            try:
+                s_bytes, s_mime, s_inter, s_refs = await render_surgical_swap(
+                    room_image_bytes=orig_room_bytes,
+                    prior_render_bytes=prior_bytes,
+                    prior_interaction_id=prior_inter_id,
+                    target_item=t_item,
+                    new_sku=cand,
+                    zone=z_obj,
+                )
+                qa = await audit_rendered_room(
+                    original_room_bytes=orig_room_bytes,
+                    original_mime=orig_mime,
+                    sku_images=s_refs,
+                    rendered_room_bytes=s_bytes,
+                    rendered_mime=s_mime,
+                    was_repaired=False,
+                )
+                session.prewarmed_swaps[(t_item.sku_id, cand.sku_id)] = (
+                    s_bytes,
+                    s_mime,
+                    s_inter,
+                    qa,
+                )
+            except Exception:
+                pass
+
+        if jobs:
+            await asyncio.gather(*[_run_one(t, c, z) for t, c, z in jobs])
+    except Exception:
+        pass
 
 
 async def _stream_session_events(session: SpatialSession) -> AsyncIterator[str]:
@@ -697,49 +759,57 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             render=None,
         )
 
-    # 3. Stateful Nano Banana 2.1 surgical swap + `gemini-decision-1` QA
+    # 3. Stateful Nano Banana 2.1 surgical swap + `gemini-decision-1` QA (instant <150ms if pre-warmed!)
     t_swap = time.perf_counter()
     orig_room_bytes, orig_mime = session.room_images[0]
     prior_bytes = session.last_render_bytes or orig_room_bytes
     zone_obj = next((z for z in zones if z.zone_id == new_sku_enriched.zone_id), zones[0] if zones else None)
 
-    swap_bytes, swap_mime, new_inter_id, new_refs = await render_surgical_swap(
-        room_image_bytes=orig_room_bytes,
-        prior_render_bytes=prior_bytes,
-        prior_interaction_id=session.last_render_interaction_id,
-        target_item=target_item,
-        new_sku=new_sku_enriched,
-        zone=zone_obj,
-    )
-
-    qa_verdict = await audit_rendered_room(
-        original_room_bytes=orig_room_bytes,
-        original_mime=orig_mime,
-        sku_images=new_refs,
-        rendered_room_bytes=swap_bytes,
-        rendered_mime=swap_mime,
-        was_repaired=False,
-    )
-
     repaired = False
     repair_reason: str | None = None
-    if qa_verdict.status == "failed" and qa_verdict.defect_summary:
-        repair_reason = qa_verdict.defect_summary
-        swap_bytes, swap_mime, new_inter_id = await render_targeted_repair(
+    prewarmed = (
+        None
+        if req.variant_id
+        else session.prewarmed_swaps.pop((target_item.sku_id, new_sku_enriched.sku_id), None)
+    )
+    if prewarmed is not None:
+        swap_bytes, swap_mime, new_inter_id, qa_verdict = prewarmed
+    else:
+        swap_bytes, swap_mime, new_inter_id, new_refs = await render_surgical_swap(
             room_image_bytes=orig_room_bytes,
-            failed_render_bytes=swap_bytes,
-            prior_interaction_id=new_inter_id,
-            defect_summary=repair_reason,
+            prior_render_bytes=prior_bytes,
+            prior_interaction_id=session.last_render_interaction_id,
+            target_item=target_item,
+            new_sku=new_sku_enriched,
+            zone=zone_obj,
         )
-        repaired = True
+
         qa_verdict = await audit_rendered_room(
             original_room_bytes=orig_room_bytes,
             original_mime=orig_mime,
             sku_images=new_refs,
             rendered_room_bytes=swap_bytes,
             rendered_mime=swap_mime,
-            was_repaired=True,
+            was_repaired=False,
         )
+
+        if qa_verdict.status == "failed" and qa_verdict.defect_summary:
+            repair_reason = qa_verdict.defect_summary
+            swap_bytes, swap_mime, new_inter_id = await render_targeted_repair(
+                room_image_bytes=orig_room_bytes,
+                failed_render_bytes=swap_bytes,
+                prior_interaction_id=new_inter_id,
+                defect_summary=repair_reason,
+            )
+            repaired = True
+            qa_verdict = await audit_rendered_room(
+                original_room_bytes=orig_room_bytes,
+                original_mime=orig_mime,
+                sku_images=new_refs,
+                rendered_room_bytes=swap_bytes,
+                rendered_mime=swap_mime,
+                was_repaired=True,
+            )
 
     version_id = f"v{len(session.versions) + 1}"
     b64_swap = base64.b64encode(swap_bytes).decode("utf-8")

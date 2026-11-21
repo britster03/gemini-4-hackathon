@@ -68,8 +68,14 @@ export function VoiceSpatialThread({
   const [isListening, setIsListening] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
   const [voiceReplyOn, setVoiceReplyOn] = useState(true);
+  const [activeSwapSkuId, setActiveSwapSkuId] = useState<string | null>(null);
+  const [brokenImgIds, setBrokenImgIds] = useState<Record<string, boolean>>({});
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const lastSpokenIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isSwapping) setActiveSwapSkuId(null);
+  }, [isSwapping]);
 
   // Two-way voice: speak assistant replies aloud when voiceReplyOn is enabled
   useEffect(() => {
@@ -222,12 +228,21 @@ export function VoiceSpatialThread({
                   }`}
                 >
                   <div className="flex gap-2.5">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={alt.image_url}
-                      alt={alt.title}
-                      className="h-12 w-12 rounded-lg object-cover border border-at-border shrink-0"
-                    />
+                    {alt.image_url && !brokenImgIds[alt.sku_id] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={alt.image_url}
+                        alt={alt.title}
+                        onError={() =>
+                          setBrokenImgIds((prev) => ({ ...prev, [alt.sku_id]: true }))
+                        }
+                        className="h-12 w-12 rounded-lg object-cover border border-at-border shrink-0 bg-at-card"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-lg border border-at-border shrink-0 bg-at-card flex items-center justify-center text-[10px] font-mono text-at-muted">
+                        SKU
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <p className="text-[11px] font-semibold text-at-ink line-clamp-2 leading-tight">
                         {alt.title}
@@ -267,10 +282,15 @@ export function VoiceSpatialThread({
                       <button
                         type="button"
                         disabled={isSwapping}
-                        onClick={() => onSelectAlternative(alt)}
+                        onClick={() => {
+                          setActiveSwapSkuId(alt.sku_id);
+                          onSelectAlternative(alt);
+                        }}
                         className="px-2.5 py-1 rounded-full bg-at-cyan hover:opacity-95 text-[#0C0D10] text-[10px] font-semibold disabled:opacity-50 cursor-pointer"
                       >
-                        {isSwapping ? "Swapping…" : "Surgical Swap"}
+                        {isSwapping && activeSwapSkuId === alt.sku_id
+                          ? "Swapping…"
+                          : "Surgical Swap"}
                       </button>
                     </div>
                   )}

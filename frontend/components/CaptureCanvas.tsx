@@ -23,6 +23,7 @@ import {
   type ProcessedRoomImage,
 } from "@/lib/imageUtils";
 import { DEMO_PRESETS } from "@/lib/mockData";
+import { PoweredByBar } from "@/components/BrandMarks";
 
 interface CaptureCanvasProps {
   onLaunchSession: (payload: {
@@ -654,16 +655,19 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
           </div>
         </div>
 
-        {/* Subtle Footer: Single Clean Link to Live Proof & Benchmarks */}
-        <div className="pt-3 border-t border-at-border flex items-center justify-between gap-2 text-xs text-at-muted">
-          <span>Verified in-stock merchants · Shop Pay checkout</span>
-          <Link
-            href="/under-the-hood"
-            className="inline-flex items-center gap-1 text-at-cyan hover:underline font-medium shrink-0"
-          >
-            <Cpu className="h-3.5 w-3.5" />
-            Live Proof &amp; Benchmarks ↗
-          </Link>
+        {/* Editorial Sponsor Strip + Clean Proof Link */}
+        <div className="space-y-2.5 pt-1">
+          <PoweredByBar />
+          <div className="flex items-center justify-between gap-2 text-xs text-at-muted">
+            <span>Verified in-stock merchants · Shop Pay checkout</span>
+            <Link
+              href="/under-the-hood"
+              className="inline-flex items-center gap-1 text-at-cyan hover:underline font-medium shrink-0"
+            >
+              <Cpu className="h-3.5 w-3.5" />
+              Live Proof &amp; Benchmarks ↗
+            </Link>
+          </div>
         </div>
       </aside>
     </div>

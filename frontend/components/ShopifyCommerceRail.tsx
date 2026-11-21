@@ -453,6 +453,104 @@ export function ShopifyCommerceRail({
                   </div>
                 </div>
 
+                {/* Actual Size vs. Measured Room Gap Comparison Bar */}
+                {(() => {
+                  const matchedZone =
+                    scaleData?.zones.find((z) => z.zone_id === item.zone_id) ??
+                    scaleData?.zones[0];
+                  const gapW = matchedZone?.width_in ?? item.zone_width_in;
+                  const marginIn = 2.0;
+                  const usableW = Math.max(1, Number((gapW - marginIn).toFixed(1)));
+                  const gapD = matchedZone?.depth_in ?? null;
+                  const itemW = item.width_in ?? null;
+                  const itemD = item.depth_in ?? null;
+                  const itemH = item.height_in ?? null;
+
+                  if (!gapW || gapW <= 0) return null;
+
+                  if (itemW !== null && itemW > 0) {
+                    const spareIn = Number((usableW - itemW).toFixed(1));
+                    const fits = spareIn >= 0;
+                    const itemPct = Math.min(100, Math.round((itemW / gapW) * 100));
+                    const marginPct = Math.min(12, Math.max(3, Math.round((marginIn / gapW) * 100)));
+                    const sparePct = Math.max(0, 100 - itemPct - marginPct);
+                    return (
+                      <div className="rounded-lg bg-at-card border border-at-border/90 px-2.5 py-2 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 text-[10px] font-mono tabular-nums-strict">
+                          <span className="inline-flex items-center gap-1 font-sans font-medium text-at-muted">
+                            <Ruler className="h-3 w-3 text-at-cyan" />
+                            Size vs. Measured Gap
+                          </span>
+                          <span className={fits ? "text-at-emerald font-semibold" : "text-at-coral font-semibold"}>
+                            {itemW.toFixed(1)}&quot; / {usableW.toFixed(1)}&quot; usable (
+                            {fits ? `+${spareIn.toFixed(1)}" spare` : `${spareIn.toFixed(1)}" overflow`})
+                          </span>
+                        </div>
+
+                        {/* Proportional Width Scale Bar */}
+                        <div
+                          className="h-2.5 w-full rounded-full bg-at-surface border border-at-border/70 overflow-hidden flex"
+                          title={`Item ${itemW.toFixed(1)}" W inside ${gapW.toFixed(1)}" measured gap (${usableW.toFixed(1)}" usable + ${marginIn}" wall margin)`}
+                        >
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              fits ? "bg-at-emerald" : "bg-at-coral"
+                            }`}
+                            style={{ width: `${itemPct}%` }}
+                          />
+                          {sparePct > 0 && (
+                            <div
+                              className="h-full bg-at-cyan/15 border-l border-dashed border-at-cyan/50"
+                              style={{ width: `${sparePct}%` }}
+                            />
+                          )}
+                          <div
+                            className="h-full bg-at-muted/25 border-l border-at-border"
+                            style={{ width: `${marginPct}%` }}
+                          />
+                        </div>
+
+                        {/* Exact Numeric Breakdown */}
+                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[10px] font-mono tabular-nums-strict text-at-muted">
+                          <span>
+                            Item:{" "}
+                            <strong className="text-at-ink">
+                              {itemW.toFixed(1)}&quot;W
+                              {itemD ? ` × ${itemD.toFixed(1)}"D` : ""}
+                              {itemH ? ` × ${itemH.toFixed(1)}"H` : ""}
+                            </strong>
+                          </span>
+                          <span>
+                            Gap:{" "}
+                            <strong className="text-at-ink">
+                              {gapW.toFixed(1)}&quot;W
+                              {gapD ? ` × ${gapD.toFixed(1)}"D` : ""}
+                            </strong>
+                            {" "}({marginIn.toFixed(0)}&quot; margin)
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="rounded-lg bg-at-notice/5 border border-at-notice/30 px-2.5 py-2 space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-[10px] font-mono tabular-nums-strict">
+                        <span className="inline-flex items-center gap-1 font-sans font-medium text-at-notice">
+                          <Ruler className="h-3 w-3" />
+                          Measured Gap: {gapW.toFixed(1)}&quot; W ({usableW.toFixed(1)}&quot; usable)
+                        </span>
+                        <span className="text-at-notice font-semibold">Merchant width unlisted</span>
+                      </div>
+                      <p className="text-[10px] text-at-muted leading-snug">
+                        Shopify merchant did not publish exact width in text. Confirm width ≤{" "}
+                        <span className="font-mono font-semibold text-at-ink">{usableW.toFixed(1)}&quot;</span>{" "}
+                        or click <strong className="text-at-ink">Find fit</strong> for a verified-width SKU.
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 {/* Finish Swatches + 1-Click Re-Render Finish + See Alternatives */}
                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-at-border flex-wrap">
                   <div className="flex items-center gap-1.5 flex-wrap">

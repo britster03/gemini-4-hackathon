@@ -24,8 +24,11 @@ import {
   MOCK_CHAIR_ALTERNATIVES,
 } from "./mockData";
 
-export const API_BASE_URL =
+const rawApiBase =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+export const API_BASE_URL = rawApiBase.startsWith("http")
+  ? rawApiBase.replace(/\/$/, "")
+  : `https://${rawApiBase.replace(/\/$/, "")}`;
 
 export const DEFAULT_USE_MOCK =
   process.env.NEXT_PUBLIC_USE_MOCK_SSE === "true";

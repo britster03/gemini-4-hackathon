@@ -1,1 +1,1 @@
-"""ClearBuy / Datum backend package."""
+"""ClearBuy (Datum) — Backend Package (Engineer B)."""

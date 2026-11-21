@@ -32,7 +32,7 @@ from backend.genai_client import (
     assert_supported_model,
     get_genai_client,
 )
-from backend.schemas import (
+from backend.schemas_agent import (
     BundleSolveResult,
     CandidateSKU,
     CartProposal,

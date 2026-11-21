@@ -736,13 +736,128 @@ def _extract_file_content(args: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def verify_engineer_b_payload(payload: Dict[str, Any], attempt: int = 1) -> Dict[str, Any]:
+    """Normalize Engineer B's `{budget_usd, zones, items}` (`ShopifySKU`) payload and run `verify_bundle_dict`."""
+    budget_usd = _safe_float(payload.get("budget_usd")) or 0.0
+    raw_zones = payload.get("zones") or []
+    norm_zones: List[Dict[str, Any]] = []
+    for idx, rz in enumerate(raw_zones):
+        if not isinstance(rz, dict):
+            continue
+        zid = str(rz.get("zone_id") or f"zone_{idx + 1}")
+        lat_margin = _safe_float(rz.get("lateral_margin_in"))
+        if lat_margin is None:
+            lat_margin = _safe_float(rz.get("wall_margin_in"))
+        if lat_margin is None:
+            lat_margin = 2.0
+        func_clr = _safe_float(rz.get("functional_clearance_in"))
+        if func_clr is None:
+            func_clr = _safe_float(rz.get("clearance_required_in"))
+        if func_clr is None:
+            func_clr = 24.0
+        w_in = _safe_float(rz.get("width_in")) or 43.5
+        d_in = _safe_float(rz.get("depth_in")) or 60.0
+        usable_w = _safe_float(rz.get("usable_width_in"))
+        if usable_w is None:
+            usable_w = round(max(0.0, w_in - lat_margin), 2)
+        norm_zones.append(
+            {
+                "zone_id": zid,
+                "label": rz.get("label") or zid,
+                "enclosure_type": rz.get("enclosure_type") or "enclosed_alcove",
+                "width_in": w_in,
+                "depth_in": d_in,
+                "lateral_margin_in": lat_margin,
+                "usable_width_in": usable_w,
+                "clearance_type": rz.get("clearance_type") or ("chair_pullout" if func_clr >= 24.0 else "none"),
+                "functional_clearance_in": func_clr,
+            }
+        )
+
+    default_zid = norm_zones[0]["zone_id"] if norm_zones else "zone_1"
+    if not norm_zones:
+        # When session.scale is absent (e.g., checkout-only unit fixtures), enforce budget/price only
+        norm_zones = [
+            {
+                "zone_id": default_zid,
+                "label": "Unconstrained Checkout Zone",
+                "enclosure_type": "open_wall",
+                "width_in": 9999.0,
+                "depth_in": 9999.0,
+                "lateral_margin_in": 0.0,
+                "usable_width_in": 9999.0,
+                "clearance_type": "none",
+                "functional_clearance_in": 0.0,
+            }
+        ]
+    known_zone_ids = {z["zone_id"] for z in norm_zones}
+    norm_items: List[Dict[str, Any]] = []
+    for idx, it in enumerate(payload.get("items") or []):
+        if not isinstance(it, dict):
+            continue
+        dims = it.get("dimensions") if isinstance(it.get("dimensions"), dict) else {}
+        w_in = _safe_float(it.get("width_in"))
+        if w_in is None:
+            w_in = _safe_float(dims.get("width_in"))
+        d_in = _safe_float(it.get("depth_in"))
+        if d_in is None:
+            d_in = _safe_float(dims.get("depth_in"))
+        h_in = _safe_float(it.get("height_in"))
+        if h_in is None:
+            h_in = _safe_float(dims.get("height_in"))
+        unv = bool(
+            it.get("dimensions_unverified")
+            if "dimensions_unverified" in it
+            else dims.get("dimensions_unverified", w_in is None)
+        )
+        gid = str(it.get("gid") or it.get("sku_id") or f"gid://shopify/Product/{idx + 1}")
+        raw_item_zid = str(it.get("zone_id") or default_zid)
+        resolved_zid = raw_item_zid if raw_item_zid in known_zone_ids else default_zid
+        norm_items.append(
+            {
+                "item_id": str(it.get("item_id") or it.get("sku_id") or f"item_{idx + 1}"),
+                "zone_id": resolved_zid,
+                "sku_id": gid if gid.startswith("gid://shopify/") else f"gid://shopify/Product/{gid}",
+                "title": str(it.get("title") or f"item_{idx + 1}"),
+                "price_cents": it.get("price_cents", int(round(float(it.get("price_usd", 0.0) or 0.0) * 100))),
+                "price_usd": it.get("price_usd"),
+                "width_in": w_in,
+                "depth_in": d_in,
+                "height_in": h_in,
+                "dimensions_unverified": unv,
+                "placement_mode": it.get("placement_mode"),
+                "category": str(it.get("category") or "furniture"),
+            }
+        )
+
+    constraints_dict = {
+        "budget_usd": budget_usd,
+        "zones": norm_zones,
+        "protected_anchors": payload.get("protected_anchors") or [],
+        "require_shopify_gid": False,
+        "allow_unverified_primary": True,
+    }
+    proposal_dict = {
+        "budget_usd": budget_usd,
+        "items": norm_items,
+    }
+    return verify_bundle_dict(proposal_dict, constraints_dict, attempt=attempt)
+
+
 def handle_hook_stdin(raw_stdin: str) -> Dict[str, Any]:
-    """Process a single `pre_tool_execution` / `PreToolUse` JSON payload from stdin."""
+    """Process either a Managed Agents `pre_tool_execution` payload OR Engineer B's `{budget_usd, zones, items}` JSON."""
     if not raw_stdin.strip():
         return {"decision": "allow"}
     try:
         payload = json.loads(raw_stdin)
     except json.JSONDecodeError:
+        return {"decision": "allow"}
+
+    # Direct Engineer B adapter invocation (`{"budget_usd": ..., "zones": [...], "items": [...]}`)
+    if isinstance(payload, dict) and "items" in payload and "zones" in payload and "tool_call" not in payload and "toolCall" not in payload:
+        res = verify_engineer_b_payload(payload)
+        if res["decision"] == "deny":
+            return {"decision": "deny", "reason": res["reason"]}
         return {"decision": "allow"}
 
     tool_name, args, cwd = _extract_tool_info(payload)

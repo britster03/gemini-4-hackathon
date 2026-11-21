@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
-
-from dotenv import load_dotenv
-from google import genai
+from backend.config import (
+    get_gemini_api_key,
+    get_genai_client as _config_get_genai_client,
+    reload_env,
+)
 
 # Models strictly standardized across ClearBuy (Gemini 4 + Frontier Stack)
 MODEL_NEON = "gemini-4-neon"
@@ -43,43 +44,15 @@ def assert_supported_model(model_name: str) -> str:
 
 
 def load_env() -> None:
-    """Load .env.local / .env from workspace root or parent directories."""
-    repo_root = Path(__file__).resolve().parent.parent
-    for candidate in (
-        repo_root / ".env.local",
-        repo_root / ".env",
-        Path.cwd() / ".env.local",
-        Path.cwd() / ".env",
-    ):
-        if candidate.exists():
-            load_dotenv(dotenv_path=candidate, override=False)
+    """Load .env.local / .env via shared backend.config."""
+    reload_env()
 
 
-@lru_cache(maxsize=4)
-def get_genai_client(api_version: str = "v1beta", api_key: Optional[str] = None) -> genai.Client:
-    """Return a cached google-genai Client configured for v1beta (Managed Agents + Decisions + Interactions) or v1."""
-    load_env()
-    use_vertex = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("1", "true", "yes")
-    if use_vertex:
-        project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCLOUD_PROJECT")
-        location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-        return genai.Client(
-            vertexai=True,
-            project=project,
-            location=location,
-            http_options={"api_version": api_version},
-        )
+def get_genai_client(api_version: str = "v1beta", api_key: str | None = None):
+    """Delegate to shared backend.config client factory."""
+    if api_key:
+        from google import genai
 
-    resolved_key = (
-        api_key
-        or os.getenv("GEMINI_API_KEY")
-        or os.getenv("GOOGLE_API_KEY")
-    )
-    if not resolved_key:
-        raise RuntimeError(
-            "Missing GEMINI_API_KEY. Set GEMINI_API_KEY in .env.local or environment."
-        )
-    return genai.Client(
-        api_key=resolved_key,
-        http_options={"api_version": api_version},
-    )
+        return genai.Client(api_key=api_key, http_options={"api_version": api_version})
+    return _config_get_genai_client(api_version=api_version)
+

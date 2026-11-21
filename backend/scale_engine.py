@@ -41,6 +41,7 @@ from PIL import ExifTags, Image
 from pydantic import BaseModel, Field
 
 from agents.verify_bundle import verify_bundle_dict
+from backend.config import has_live_gemini_credentials
 from backend.genai_client import (
     MODEL_NEON,
     MODEL_TRANSCRIBE,
@@ -48,6 +49,13 @@ from backend.genai_client import (
     get_genai_client,
 )
 from backend.schemas import (
+    BoundingBox,
+    ProtectedAnchor as ApiProtectedAnchor,
+    ReferenceAnchor as ApiReferenceAnchor,
+    ScaleReadyEvent,
+    SpatialZone as ApiSpatialZone,
+)
+from backend.schemas_agent import (
     AnchorTier,
     BBox1000,
     BBoxPx,
@@ -770,20 +778,138 @@ def calibrate_space_sync(
     )
 
 
+def to_scale_ready_event(
+    cal: ScaleCalibrationResult,
+    session_id: str,
+    prompt: str = "",
+) -> ScaleReadyEvent:
+    """Convert Engineer A's `ScaleCalibrationResult` into Engineer B's SSE `ScaleReadyEvent`."""
+    from backend.adapters import extract_requested_categories
+
+    req_cats = extract_requested_categories(prompt, scope=cal.scope) if prompt else []
+
+    def _map_anchor_type(a: DetectedAnchor) -> Literal["outlet", "door", "desk", "baseboard", "other"]:
+        lbl = f"{a.standard_key or ''} {a.label}".lower()
+        if "outlet" in lbl or "switch" in lbl or "socket" in lbl:
+            return "outlet"
+        if "door" in lbl:
+            return "door"
+        if "desk" in lbl or "counter" in lbl:
+            return "desk"
+        if "baseboard" in lbl:
+            return "baseboard"
+        return "other"
+
+    def _to_ref(a: DetectedAnchor) -> ApiReferenceAnchor:
+        return ApiReferenceAnchor(
+            anchor_id=a.anchor_id,
+            label=f'{a.label} · {a.known_inches:g}" {"H" if a.measured_axis == "height" else "W"}',
+            anchor_type=_map_anchor_type(a),
+            known_inches=a.known_inches,
+            measured_axis=a.measured_axis,
+            px_per_in=round(a.px_per_inch, 2),
+            bbox=BoundingBox(
+                y_min=a.bbox_1000.y_min,
+                x_min=a.bbox_1000.x_min,
+                y_max=a.bbox_1000.y_max,
+                x_max=a.bbox_1000.x_max,
+            ),
+        )
+
+    api_anchors = [_to_ref(a) for a in cal.all_anchors]
+    api_primary = _to_ref(cal.primary_anchor) if cal.primary_anchor else None
+
+    api_zones: List[ApiSpatialZone] = []
+    for idx, z in enumerate(cal.zones):
+        # Ensure canonical categories match ShopMCPClient pools (`desk`, `chair`, `shelf`, `sofa`, `coffee table`, `lamp`, `rug`, `desk mat`)
+        zcats = [c.lower() for c in z.target_categories]
+        if len(cal.zones) == 1 and req_cats:
+            zcats = req_cats
+        elif not zcats and req_cats:
+            zcats = [req_cats[idx % len(req_cats)]]
+
+        api_zones.append(
+            ApiSpatialZone(
+                zone_id=f"zone_{idx + 1}",
+                label=f"Zone {idx + 1} · {z.label}" if not z.label.lower().startswith("zone") else z.label,
+                target_categories=zcats,
+                bbox=BoundingBox(
+                    y_min=z.bbox_1000.y_min,
+                    x_min=z.bbox_1000.x_min,
+                    y_max=z.bbox_1000.y_max,
+                    x_max=z.bbox_1000.x_max,
+                ),
+                width_in=z.width_in,
+                depth_in=z.depth_in,
+                clearance_required_in=z.functional_clearance_in,
+                wall_margin_in=z.lateral_margin_in,
+                usable_width_in=z.usable_width_in,
+                confidence_tier=z.confidence_band,
+                tolerance_in=z.uncertainty_in,
+                overridden_by_user=z.override_applied,
+            )
+        )
+
+    api_protected = [
+        ApiProtectedAnchor(
+            label=p.label,
+            bbox=BoundingBox(
+                y_min=p.bbox_1000.y_min,
+                x_min=p.bbox_1000.x_min,
+                y_max=p.bbox_1000.y_max,
+                x_max=p.bbox_1000.x_max,
+            ),
+        )
+        for p in cal.protected_anchors
+    ]
+
+    fallback_badge: Optional[str] = None
+    if cal.calibration_layer == 2:
+        fallback_badge = cal.badge_label
+    elif cal.foreshortening_flagged:
+        fallback_badge = f'Anchor skew {cal.cross_anchor_skew_pct:.1f}% (>15% foreshortening) · ±{cal.uncertainty_in:.1f}"'
+
+    return ScaleReadyEvent(
+        session_id=session_id,
+        detected_scope=cal.scope,
+        calibration_layer=cal.calibration_layer,
+        calibration_summary=cal.badge_label,
+        fallback_badge=fallback_badge,
+        primary_anchor=api_primary,
+        anchors_detected=api_anchors,
+        cross_anchor_skew_pct=cal.cross_anchor_skew_pct,
+        foreshortening_warning=cal.foreshortening_flagged,
+        zones=api_zones,
+        protected_anchors=api_protected,
+        elapsed_ms=cal.latency_ms,
+    )
+
+
 async def calibrate_space(
-    image_input: Union[bytes, str, Path, Image.Image],
-    prompt: str,
+    image_input: Optional[Union[bytes, str, Path, Image.Image]] = None,
+    prompt: str = "",
     scope: ScopeMode = "auto",
     exif_focal_mm: Optional[float] = None,
     thinking_level: str = "medium",
     angle_index: int = 0,
     zone_id_offset: int = 0,
     model: str = MODEL_NEON,
-) -> ScaleCalibrationResult:
-    """Async entrypoint for FastAPI SSE orchestrator."""
-    return await asyncio.to_thread(
+    *,
+    session_id: Optional[str] = None,
+    image_bytes: Optional[bytes] = None,
+) -> Any:
+    """Async entrypoint supporting BOTH Engineer A (`ScaleCalibrationResult`) and Engineer B (`ScaleReadyEvent`)."""
+    resolved_img = image_input if image_input is not None else image_bytes
+    if resolved_img is None:
+        raise ValueError("Either image_input or image_bytes is required.")
+
+    if session_id is not None and not has_live_gemini_credentials():
+        # Allow Engineer B's offline unit tests to fall through to deterministic fixture
+        raise RuntimeError("No live Gemini credentials; delegate to offline adapter fixture.")
+
+    cal = await asyncio.to_thread(
         calibrate_space_sync,
-        image_input,
+        resolved_img,
         prompt,
         scope,
         exif_focal_mm,
@@ -792,6 +918,9 @@ async def calibrate_space(
         zone_id_offset,
         model,
     )
+    if session_id is not None:
+        return to_scale_ready_event(cal, session_id=session_id, prompt=prompt)
+    return cal
 
 
 async def calibrate_workspace(

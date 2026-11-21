@@ -27,7 +27,7 @@ from backend.genai_client import (
     assert_supported_model,
     get_genai_client,
 )
-from backend.schemas import CandidateSKU, ParsedDimensions, PlacementMode
+from backend.schemas_agent import CandidateSKU, ParsedDimensions, PlacementMode
 
 
 SHOP_MCP_ENDPOINT = "https://mcp.shop.com/"

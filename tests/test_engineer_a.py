@@ -36,7 +36,7 @@ from backend.scale_engine import (
     estimate_zone_metric_depth_m,
     recalculate_zone_override,
 )
-from backend.schemas import (
+from backend.schemas_agent import (
     BBox1000,
     BBoxPx,
     CartProposal,

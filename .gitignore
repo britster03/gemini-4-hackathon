@@ -1,28 +1,43 @@
-# Secrets & Environment
+# Secrets & Environment Variables (NEVER COMMIT)
 .env
 .env.*
 .env.local
+!.env.example
+*.pem
+*.key
+*credentials*.json
+service-account*.json
 
-# Python / uv
+# Local Hackathon Reference Docs & OS Metadata
+*.pdf
+.DS_Store
+Thumbs.db
+
+# Python / uv Virtual Environments & Caches
 .venv/
 venv/
+env/
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
+.mypy_cache/
 *.egg-info/
 dist/
 build/
 
-# Node / Next.js (Engineer C)
-node_modules/
-.next/
-out/
-
-# Runtime / Ephemeral Traces & Reference Docs
-*.pdf
+# Runtime Session Artifacts, Hook Traces & Raw Eval Media Cache
 hook_trace.jsonl
 /tmp_uploads/
-.DS_Store
+backend/.sessions/
+eval/data/
+eval/tmp/
+*.log
+
+# Node / Next.js (Frontend Teammate Protection)
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/

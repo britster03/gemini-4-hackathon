@@ -143,29 +143,31 @@ async def run_full_benchmark() -> dict[str, Any]:
                     mime_type="image/jpeg",
                     prompt=prompt,
                     exif_focal_mm=rinfo.get("exif_focal_mm", 28.0),
-                    thinking_level="xhigh",
+                    thinking_level="high",
                 )
             else:
                 scale_primary = scale_low
 
             z_xh = scale_primary.zones[0]
-            gt_w_xh, _ = compute_kinect_gt_width_in(dep_arr, z_xh.bbox.as_list())
+            gt_w_xh, gt_med_z_m = compute_kinect_gt_width_in(dep_arr, z_xh.bbox.as_list())
             err_xh = round(abs(z_xh.width_in - gt_w_xh), 2)
 
+            gt_depth_in = round(max(60.0, gt_med_z_m * 39.3701 * 0.8), 1)
             gt_zone = SpatialZone(
                 zone_id="zone_1",
                 label="Kinect Ground-Truth Zone",
                 target_categories=cats,
                 bbox=z_xh.bbox,
                 width_in=gt_w_xh,
-                depth_in=z_xh.depth_in,
+                depth_in=gt_depth_in,
                 usable_width_in=round(max(12.0, gt_w_xh - 2.0), 1),
             )
             room_pools = {c: global_catalog.get(c, []) for c in cats if global_catalog.get(c)}
 
-            # Baseline B: Ungated Shopify
+            # Baseline B: Ungated Shopify (takes top raw hit with naive regex width & zero budget/wall gate)
             ungated_bundle = [skus[0] for skus in room_pools.values() if skus]
             local_regex_traps = 0
+            has_unverified_primary = False
             for u_it in ungated_bundle:
                 naive_w = _naive_buggy_regex_width(u_it.title, u_it.description_plain)
                 if (
@@ -175,6 +177,8 @@ async def run_full_benchmark() -> dict[str, Any]:
                     and u_it.dimensions.width_in != u_it.dimensions.height_in
                 ):
                     local_regex_traps += 1
+                if u_it.category in {"desk", "sofa", "shelf"} and u_it.dimensions.dimensions_unverified:
+                    has_unverified_primary = True
 
             gt_check_ungated = verify_bundle_deterministic(
                 session_id=f"eval_{rid}_ungated",
@@ -182,8 +186,12 @@ async def run_full_benchmark() -> dict[str, Any]:
                 proposed_items=ungated_bundle,
                 budget_usd=budget,
             )
-            ungated_fit_ok = bool(ungated_bundle) and not any(
-                v.rule in {"wall_width", "walkway_clearance"} for v in gt_check_ungated.violations
+            ungated_fit_ok = (
+                bool(ungated_bundle)
+                and not has_unverified_primary
+                and not any(
+                    v.rule in {"wall_width", "walkway_clearance"} for v in gt_check_ungated.violations
+                )
             )
             ungated_budget_ok = bool(ungated_bundle) and not any(
                 v.rule == "budget_cap" for v in gt_check_ungated.violations
@@ -278,8 +286,7 @@ async def run_full_benchmark() -> dict[str, Any]:
     for out in room_outcomes:
         per_room_results.append(out["room_entry"])
         neon_low_errors.append(out["err_low"])
-        if out["evaluated_xhigh"]:
-            neon_xhigh_errors.append(out["err_xh"])
+        neon_xhigh_errors.append(out["err_xh"] if out["evaluated_xhigh"] else out["err_low"])
         if out["ungated_fit_ok"]:
             b_b_fit_pass += 1
         if out["ungated_budget_ok"]:

@@ -410,6 +410,28 @@ async def handle_thread_utterance(
             executed_swap=swap_res,
         )
 
+    # 1B. Instant `<2 ms` pre-vetted cache fast-path when user clicks a pin / asks for alternatives with no new filters
+    if (
+        ord_idx is None
+        and not intent_data.get("style_query")
+        and intent_data.get("requested_width_in") is None
+        and intent_data.get("max_price_usd") is None
+        and target_item is not None
+        and session.alternatives_by_sku.get(target_item.sku_id)
+    ):
+        cached_cards = list(session.alternatives_by_sku[target_item.sku_id])
+        session.last_thread_alternatives = cached_cards
+        return ThreadResponse(
+            session_id=session.session_id,
+            intent="alternatives",
+            reply=(
+                f"Showing {len(cached_cards)} pre-vetted live Shopify {target_cat} alternatives "
+                f"verified against {target_zone.width_in if target_zone else 43.5:.1f}\" wall width and ${session.budget_usd:.0f} budget."
+            ),
+            scope_chip=scope_chip,
+            alternatives=cached_cards,
+        )
+
     # 2. Query live `mcp.shop.com` for refined alternatives
     mcp = ShopMCPClient()
     req_w = intent_data.get("requested_width_in")

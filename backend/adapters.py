@@ -37,9 +37,11 @@ from backend.schemas import (
     ProtectedAnchor,
     ReferenceAnchor,
     ScaleReadyEvent,
+    SKUTabPanel,
     ShopifySKU,
     SpaceScope,
     SpatialZone,
+    ThreadAlternativeCard,
 )
 
 # Furniture categories that occupy horizontal linear wall width side-by-side
@@ -857,3 +859,294 @@ def solve_combinatorial_bundle(
             )
         )
     return [], hook_events, refusal
+
+
+def update_zone_footprints(
+    zones: list[SpatialZone],
+    verified_items: list[ShopifySKU],
+) -> list[SpatialZone]:
+    """Recompute per-zone occupied width/depth and remaining clearance in `<0.2 ms`."""
+    default_zid = zones[0].zone_id if zones else "zone_1"
+    updated_zones: list[SpatialZone] = []
+    for z in zones:
+        zc = z.model_copy(deep=True)
+        z_items = [it for it in verified_items if (it.zone_id or default_zid) == zc.zone_id]
+        occ_w = round(
+            sum(
+                it.dimensions.width_in
+                for it in z_items
+                if it.category.lower() in WALL_LINEAR_CATEGORIES and it.dimensions.width_in is not None
+            ),
+            1,
+        )
+        occ_d = round(
+            max(
+                (
+                    it.dimensions.depth_in
+                    for it in z_items
+                    if it.category.lower() in WALL_LINEAR_CATEGORIES and it.dimensions.depth_in is not None
+                ),
+                default=0.0,
+            ),
+            1,
+        )
+        zc.occupied_width_in = occ_w
+        zc.remaining_width_in = round(zc.usable_width_in - occ_w, 1)
+        zc.occupied_depth_in = occ_d
+        zc.remaining_clearance_in = round(zc.depth_in - occ_d, 1)
+        updated_zones.append(zc)
+    return updated_zones
+
+
+def build_sku_tabs_and_alternatives(
+    session_id: str,
+    zones: list[SpatialZone],
+    verified_items: list[ShopifySKU],
+    candidates_by_category: dict[str, list[ShopifySKU]],
+    budget_usd: float,
+) -> tuple[list[SKUTabPanel], dict[str, list[ThreadAlternativeCard]]]:
+    """Build multi-SKU tab panels + pre-vetted instant swap alternatives (`<2 ms`)."""
+    zone_map = {z.zone_id: z for z in zones}
+    default_zone = zones[0] if zones else None
+    tabs: list[SKUTabPanel] = []
+    alts_by_sku: dict[str, list[ThreadAlternativeCard]] = {}
+
+    for idx, active in enumerate(verified_items):
+        z = zone_map.get(active.zone_id or "", default_zone)
+        zid = z.zone_id if z else "zone_1"
+        zlabel = z.label if z else "Zone 1"
+        pool = candidates_by_category.get(active.category, [])
+
+        valid_cards: list[ThreadAlternativeCard] = []
+        blocked_cards: list[ThreadAlternativeCard] = []
+        cur_w = active.dimensions.width_in
+
+        for cand in pool:
+            if cand.sku_id == active.sku_id or cand.gid == active.gid:
+                continue
+            cand_copy = cand.model_copy(deep=True)
+            cand_copy.zone_id = zid
+            hypo_cart = [
+                (cand_copy if it.sku_id == active.sku_id else it)
+                for it in verified_items
+            ]
+            chk = verify_bundle_deterministic(
+                session_id=session_id,
+                zones=zones,
+                proposed_items=hypo_cart,
+                budget_usd=budget_usd,
+                run_subprocess_hook=False,
+            )
+            p_delta = round(cand_copy.price_usd - active.price_usd, 2)
+            w_val = cand_copy.dimensions.width_in
+            w_delta = round(w_val - cur_w, 1) if (w_val is not None and cur_w is not None) else None
+            sign = "+" if p_delta > 0 else "-"
+            price_str = f"{sign}${abs(p_delta):.0f}" if abs(p_delta) >= 1 else "$0"
+            fit_str = f'Fits {w_val:.1f}" W' if w_val is not None else "Unverified W"
+
+            is_blocked = chk.decision == "deny"
+            if is_blocked:
+                ov = next((v for v in chk.violations if v.overflow_in), None)
+                badge = (
+                    f'Blocked by hooks.json (+{ov.overflow_in:.1f}" over wall)'
+                    if (ov and ov.overflow_in)
+                    else f"Blocked by hooks.json ({chk.reason[:44]})"
+                )
+            else:
+                badge = f"{price_str} · {fit_str}"
+
+            card = ThreadAlternativeCard(
+                rank=0,
+                sku=cand_copy,
+                target_zone_id=zid,
+                target_item_id=active.sku_id,
+                price_delta_usd=p_delta,
+                width_delta_in=w_delta,
+                delta_badge=badge,
+                hook_blocked=is_blocked,
+                block_reason=chk.reason if is_blocked else None,
+            )
+            if is_blocked:
+                blocked_cards.append(card)
+            else:
+                valid_cards.append(card)
+
+        merged_cards = valid_cards[:4] + blocked_cards[:1]
+        for r_i, c_item in enumerate(merged_cards):
+            c_item.rank = r_i + 1
+
+        alts_by_sku[active.sku_id] = merged_cards
+        tabs.append(
+            SKUTabPanel(
+                tab_index=idx + 1,
+                tab_id=active.sku_id,
+                tab_label=f"#{idx + 1} · {active.category.title()}",
+                zone_id=zid,
+                zone_label=zlabel,
+                active_sku=active,
+                alternatives=merged_cards,
+            )
+        )
+
+    return tabs, alts_by_sku
+
+
+async def solve_combinatorial_bundle_async(
+    session_id: str,
+    prompt: str,
+    zones: list[SpatialZone],
+    candidates_by_category: dict[str, list[ShopifySKU]],
+    budget_usd: float,
+) -> tuple[list[ShopifySKU], list[HookEvent], str | None]:
+    """Run Engineer A's Managed Agent (`antigravity-preview-09-2026` / `gemini-4-hydrogen` + `.agents/verify_bundle.py`)
+    when live Gemini credentials are active, with instant deterministic DFS fallback."""
+    import os
+
+    if has_live_gemini_credentials() and os.getenv("CLEARBUY_DISABLE_MANAGED_AGENT", "0") != "1":
+        try:
+            from agents.verify_bundle import infer_placement_mode
+            from backend.managed_agent import solve_spatial_bundle
+            from backend.schemas_agent import (
+                BBox1000,
+                BBoxPx,
+                CandidateSKU,
+                ScaleCalibrationResult,
+                SpatialZone as AgentSpatialZone,
+            )
+
+            agent_zones = [
+                AgentSpatialZone(
+                    zone_id=z.zone_id,
+                    label=z.label,
+                    enclosure_type="enclosed_alcove",
+                    target_categories=z.target_categories,
+                    bbox_1000=BBox1000(
+                        y_min=z.bbox.y_min,
+                        x_min=z.bbox.x_min,
+                        y_max=z.bbox.y_max,
+                        x_max=z.bbox.x_max,
+                    ),
+                    bbox_px=BBoxPx(x1=0, y1=0, x2=500, y2=500),
+                    width_in=z.width_in,
+                    depth_in=z.depth_in,
+                    lateral_margin_in=z.wall_margin_in,
+                    usable_width_in=z.usable_width_in,
+                    clearance_type="chair_pullout",
+                    functional_clearance_in=z.clearance_required_in,
+                )
+                for z in zones
+            ]
+            cal = ScaleCalibrationResult(
+                scope="full_room" if len(zones) > 1 else "nook",
+                image_width_px=1024,
+                image_height_px=768,
+                calibration_layer=1,
+                uncertainty_in=1.5,
+                zones=agent_zones,
+            )
+
+            sku_lookup: dict[str, ShopifySKU] = {}
+            agent_cands: list[CandidateSKU] = []
+            for cat, skus in candidates_by_category.items():
+                matched_z = next(
+                    (z for z in zones if cat.lower() in [c.lower() for c in z.target_categories]),
+                    zones[0] if zones else None,
+                )
+                zid = matched_z.zone_id if matched_z else "zone_1"
+                for s in skus[:6]:
+                    sc = s.model_copy(deep=True)
+                    sc.zone_id = zid
+                    sku_lookup[sc.gid] = sc
+                    sku_lookup[sc.sku_id] = sc
+                    agent_cands.append(
+                        CandidateSKU(
+                            sku_id=sc.gid,
+                            variant_id=sc.selected_variant_gid,
+                            title=sc.title,
+                            merchant_name=sc.merchant_name,
+                            price_cents=sc.price_cents,
+                            price_usd=sc.price_usd,
+                            width_in=sc.dimensions.width_in,
+                            depth_in=sc.dimensions.depth_in,
+                            height_in=sc.dimensions.height_in,
+                            dimensions_unverified=sc.dimensions.dimensions_unverified,
+                            placement_mode=infer_placement_mode(
+                                {"category": sc.category, "title": sc.title}
+                            ),
+                            category=sc.category,
+                            image_url=sc.image_url,
+                            product_url=sc.product_url,
+                        )
+                    )
+
+            use_remote = os.getenv("CLEARBUY_USE_REMOTE_MANAGED_AGENT", "0").lower() in {"1", "true", "yes"}
+            solve_res = await asyncio.wait_for(
+                solve_spatial_bundle(
+                    user_prompt=prompt,
+                    calibration=cal,
+                    budget_usd=budget_usd,
+                    candidates=agent_cands,
+                    prefer_remote_managed_agent=use_remote,
+                    allow_unverified_primary=True,
+                ),
+                timeout=22.0,
+            )
+
+            mapped_hooks: list[HookEvent] = []
+            for h in solve_res.hook_trace:
+                mapped_hooks.append(
+                    HookEvent(
+                        session_id=session_id,
+                        attempt=h.attempt,
+                        decision=h.decision,
+                        reason=h.reason,
+                        proposed_total_usd=h.total_usd,
+                        budget_usd=h.budget_usd,
+                        violations=[
+                            HookViolation(
+                                rule=(
+                                    "budget_cap"
+                                    if "budget" in v.code.lower()
+                                    else ("walkway_clearance" if "clearance" in v.code.lower() else "wall_width")
+                                ),
+                                zone_id=v.zone_id,
+                                sku_id=v.item_id,
+                                overflow_in=v.overflow_in,
+                                over_budget_usd=v.shortfall_usd,
+                                message=v.message,
+                            )
+                            for v in h.violations
+                        ],
+                    )
+                )
+
+            if solve_res.status == "verified" and solve_res.proposal and solve_res.proposal.items:
+                chosen_skus: list[ShopifySKU] = []
+                for p_it in solve_res.proposal.items:
+                    orig = sku_lookup.get(p_it.sku_id)
+                    if orig is not None:
+                        c = orig.model_copy(deep=True)
+                        c.zone_id = p_it.zone_id
+                        chosen_skus.append(c)
+                # Ensure all requested categories are covered and host-verified
+                if len(chosen_skus) == len([k for k, v in candidates_by_category.items() if v]):
+                    final_chk = verify_bundle_deterministic(
+                        session_id=session_id,
+                        zones=zones,
+                        proposed_items=chosen_skus,
+                        budget_usd=budget_usd,
+                        attempt=len(mapped_hooks) + 1,
+                    )
+                    if final_chk.decision == "allow":
+                        if not mapped_hooks or mapped_hooks[-1].decision != "allow":
+                            mapped_hooks.append(final_chk)
+                        return annotate_item_fit_badges(zones, chosen_skus), mapped_hooks, None
+        except Exception:
+            pass
+
+    return solve_combinatorial_bundle(
+        session_id=session_id,
+        zones=zones,
+        candidates_by_category=candidates_by_category,
+        budget_usd=budget_usd,
+    )

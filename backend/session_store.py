@@ -16,6 +16,7 @@ from backend.schemas import (
     MerchantUCPCheckout,
     RenderVersion,
     ScaleReadyEvent,
+    SKUTabPanel,
     ShopifySKU,
     SpaceScope,
     ThreadAlternativeCard,
@@ -37,6 +38,8 @@ class SpatialSession:
     mcp_calls: list[MCPCallTrace] = field(default_factory=list)
     hook_events: list[HookEvent] = field(default_factory=list)
     verified_items: list[ShopifySKU] = field(default_factory=list)
+    sku_tabs: list[SKUTabPanel] = field(default_factory=list)
+    alternatives_by_sku: dict[str, list[ThreadAlternativeCard]] = field(default_factory=dict)
     checkouts: list[MerchantUCPCheckout] = field(default_factory=list)
     cart: CartReadyEvent | None = None
 

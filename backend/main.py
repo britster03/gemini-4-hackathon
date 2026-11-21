@@ -29,9 +29,12 @@ from PIL import Image
 
 from backend.adapters import (
     annotate_item_fit_badges,
+    build_sku_tabs_and_alternatives,
     extract_requested_categories,
     run_scale_calibration,
     solve_combinatorial_bundle,
+    solve_combinatorial_bundle_async,
+    update_zone_footprints,
     verify_bundle_deterministic,
 )
 from backend.config import (
@@ -195,8 +198,9 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
         # ------------------------------------------------------------------
         # Stage 3: `hooks.json` Combinatorial Solver (`hook_event` DENY -> ALLOW)
         # ------------------------------------------------------------------
-        verified_bundle, hook_events, refusal_reason = solve_combinatorial_bundle(
+        verified_bundle, hook_events, refusal_reason = await solve_combinatorial_bundle_async(
             session_id=session.session_id,
+            prompt=session.prompt,
             zones=scale_ev.zones,
             candidates_by_category=candidates_by_category,
             budget_usd=session.budget_usd,
@@ -211,6 +215,7 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
                 status="safe_refusal",
                 refusal_reason=refusal_reason or "No compliant bundle fits constraints.",
                 verified_items=[],
+                zones=scale_ev.zones,
                 total_cents=0,
                 total_usd=0.0,
                 budget_usd=session.budget_usd,
@@ -248,9 +253,20 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
             # Keep original search variant snapshot if enriched default variant jumped in price
             enriched_items = verified_bundle
 
+        scale_ev.zones = update_zone_footprints(scale_ev.zones, enriched_items)
+        sku_tabs, alts_by_sku = build_sku_tabs_and_alternatives(
+            session_id=session.session_id,
+            zones=scale_ev.zones,
+            verified_items=enriched_items,
+            candidates_by_category=candidates_by_category,
+            budget_usd=session.budget_usd,
+        )
+
         checkouts, ucp_traces = await mcp.create_or_update_merchant_checkouts(enriched_items)
         session.mcp_calls.extend(ucp_traces)
         session.verified_items = enriched_items
+        session.sku_tabs = sku_tabs
+        session.alternatives_by_sku = alts_by_sku
         session.checkouts = checkouts
 
         total_cents = sum(it.price_cents for it in enriched_items)
@@ -259,6 +275,9 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
             session_id=session.session_id,
             status="verified",
             verified_items=enriched_items,
+            sku_tabs=sku_tabs,
+            alternatives_by_sku=alts_by_sku,
+            zones=scale_ev.zones,
             total_cents=total_cents,
             total_usd=total_usd,
             budget_usd=session.budget_usd,
@@ -561,7 +580,8 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             },
         )
 
-    # 2. Enrich variant swatches via `get_product` + update per-merchant UCP checkouts
+    # 2. Enrich variant swatches & full gallery photos via `get_product` + update UCP checkouts
+    t_cart_upd = time.perf_counter()
     mcp = ShopMCPClient()
     new_sku_enriched, v_trace = await mcp.enrich_product_variants(new_sku)
     session.mcp_calls.append(v_trace)
@@ -575,6 +595,8 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             new_sku_enriched.selected_variant_gid = mv.gid
             new_sku_enriched.price_cents = mv.price_cents
             new_sku_enriched.price_usd = mv.price_usd
+            if mv.image_url:
+                new_sku_enriched.image_url = mv.image_url
 
     updated_cart = annotate_item_fit_badges(
         zones,
@@ -583,11 +605,74 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             for it in session.verified_items
         ],
     )
+    zones = update_zone_footprints(zones, updated_cart)
+    if session.scale:
+        session.scale.zones = zones
+
+    sku_tabs, alts_by_sku = build_sku_tabs_and_alternatives(
+        session_id=session.session_id,
+        zones=zones,
+        verified_items=updated_cart,
+        candidates_by_category=session.candidates_by_category,
+        budget_usd=session.budget_usd,
+    )
     updated_checkouts, ucp_traces = await mcp.create_or_update_merchant_checkouts(
         verified_items=updated_cart,
         existing_checkouts=session.checkouts,
     )
     session.mcp_calls.extend(ucp_traces)
+
+    total_cents = sum(it.price_cents for it in updated_cart)
+    total_usd = round(total_cents / 100.0, 2)
+    swapped_final = next(
+        (it for it in updated_cart if it.sku_id == new_sku_enriched.sku_id),
+        new_sku_enriched,
+    )
+
+    session.verified_items = updated_cart
+    session.sku_tabs = sku_tabs
+    session.alternatives_by_sku = alts_by_sku
+    session.checkouts = updated_checkouts
+
+    # Emit instant `cart_ready` SSE BEFORE ~14s Nano Banana render so UI updates dimensions, tabs & checkouts in <300ms!
+    cart_ev = CartReadyEvent(
+        session_id=session.session_id,
+        status="verified",
+        verified_items=updated_cart,
+        sku_tabs=sku_tabs,
+        alternatives_by_sku=alts_by_sku,
+        zones=zones,
+        total_cents=total_cents,
+        total_usd=total_usd,
+        budget_usd=session.budget_usd,
+        remaining_budget_usd=round(session.budget_usd - total_usd, 2),
+        checkouts=updated_checkouts,
+        mcp_calls=[v_trace] + ucp_traces,
+        elapsed_ms=int((time.perf_counter() - t_cart_upd) * 1000),
+    )
+    session.cart = cart_ev
+    session.emit_sse("cart_ready", cart_ev.model_dump())
+
+    # Fast-path (`skip_render=True`, e.g. variant finish swatch toggle or instant dimension preview)
+    if req.skip_render:
+        session.save_metadata()
+        versions_avail = [v.version_id for v in session.versions] or ["v1"]
+        cur_vid = versions_avail[-1]
+        return SwapResponse(
+            session_id=session.session_id,
+            version_id=cur_vid,
+            versions_available=versions_avail,
+            swapped_item=swapped_final,
+            verified_items=updated_cart,
+            sku_tabs=sku_tabs,
+            alternatives_by_sku=alts_by_sku,
+            zones=zones,
+            total_usd=total_usd,
+            budget_usd=session.budget_usd,
+            checkouts=updated_checkouts,
+            hook_event=hook_ev,
+            render=None,
+        )
 
     # 3. Stateful Nano Banana 2.1 surgical swap + `gemini-decision-1` QA
     t_swap = time.perf_counter()
@@ -648,8 +733,6 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
     session.versions.append(ver)
     session.last_render_interaction_id = new_inter_id
     session.last_render_bytes = swap_bytes
-    session.verified_items = updated_cart
-    session.checkouts = updated_checkouts
     session.save_metadata()
 
     versions_avail = [v.version_id for v in session.versions]
@@ -667,23 +750,54 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
     )
     session.emit_sse("render_ready", render_ev.model_dump())
 
-    total_usd = round(sum(it.price_cents for it in updated_cart) / 100.0, 2)
-    swapped_final = next(
-        (it for it in updated_cart if it.sku_id == new_sku_enriched.sku_id),
-        new_sku_enriched,
-    )
     return SwapResponse(
         session_id=session.session_id,
         version_id=version_id,
         versions_available=versions_avail,
         swapped_item=swapped_final,
         verified_items=updated_cart,
+        sku_tabs=sku_tabs,
+        alternatives_by_sku=alts_by_sku,
+        zones=zones,
         total_usd=total_usd,
         budget_usd=session.budget_usd,
         checkouts=updated_checkouts,
         hook_event=hook_ev,
         render=render_ev,
     )
+
+
+@app.get("/api/session/{session_id}/alternatives")
+async def get_session_alternatives(
+    session_id: str,
+    sku_id: str | None = Query(None, description="Optional active cart SKU ID to filter alternatives"),
+) -> dict[str, Any]:
+    """Sub-2ms pre-vetted alternatives + multi-SKU tab inspector endpoint."""
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+    zones = session.scale.zones if session.scale else []
+    if not session.sku_tabs and session.verified_items:
+        tabs, alts = build_sku_tabs_and_alternatives(
+            session_id=session.session_id,
+            zones=zones,
+            verified_items=session.verified_items,
+            candidates_by_category=session.candidates_by_category,
+            budget_usd=session.budget_usd,
+        )
+        session.sku_tabs = tabs
+        session.alternatives_by_sku = alts
+    selected_alts = (
+        session.alternatives_by_sku.get(sku_id, [])
+        if sku_id
+        else [c for cards in session.alternatives_by_sku.values() for c in cards]
+    )
+    return {
+        "session_id": session.session_id,
+        "sku_tabs": [t.model_dump() for t in session.sku_tabs],
+        "alternatives": [c.model_dump() for c in selected_alts],
+        "zones": [z.model_dump() for z in zones],
+    }
 
 
 @app.post("/api/session/{session_id}/swap", response_model=SwapResponse)
@@ -1106,6 +1220,22 @@ async def patch_session_zone(
     session.verified_items = annotate_item_fit_badges(
         session.scale.zones, session.verified_items
     )
+    session.scale.zones = update_zone_footprints(
+        session.scale.zones, session.verified_items
+    )
+    target_zone = next(
+        (z for z in session.scale.zones if z.zone_id == target_zone.zone_id),
+        target_zone,
+    )
+    sku_tabs, alts_by_sku = build_sku_tabs_and_alternatives(
+        session_id=session.session_id,
+        zones=session.scale.zones,
+        verified_items=session.verified_items,
+        candidates_by_category=session.candidates_by_category,
+        budget_usd=session.budget_usd,
+    )
+    session.sku_tabs = sku_tabs
+    session.alternatives_by_sku = alts_by_sku
     session.save_metadata()
 
     return ZoneOverrideResponse(
@@ -1114,6 +1244,8 @@ async def patch_session_zone(
         zones=session.scale.zones,
         hook_event=hook_ev,
         verified_items=session.verified_items,
+        sku_tabs=sku_tabs,
+        alternatives_by_sku=alts_by_sku,
         all_items_still_fit=(hook_ev.decision == "allow"),
     )
 

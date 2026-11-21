@@ -824,3 +824,156 @@ async def test_live_random_shopify_mcp_and_decisions_gate():
     assert all(c.sku_id.startswith("gid://shopify/") for c in screened)
     assert all(c.price_usd > 0 for c in screened)
     assert any(c.aesthetic_score is not None for c in screened)
+
+
+def test_sku_tabs_multi_images_instant_alternatives_and_skip_render_swap(monkeypatch):
+    """Verify multi-image ShopifySKU gallery extraction, <2ms SKU tabs + alternatives, and skip_render swap."""
+    from fastapi.testclient import TestClient
+    import backend.config as bcfg
+    from backend.main import app
+    from backend.schemas import BoundingBox, ProductDimensions, ScaleReadyEvent, ShopifySKU, SpatialZone
+    from backend.session_store import SpatialSession, put_session
+    from backend.shop_mcp import ShopMCPClient
+
+    monkeypatch.setattr(bcfg, "has_live_gemini_credentials", lambda: False)
+
+    # 1. Verify `_parse_ucp_products` extracts ALL product media images + merchant_sku + product_url
+    mcp = ShopMCPClient()
+    parsed = mcp._parse_ucp_products(
+        {
+            "products": [
+                {
+                    "id": "gid://shopify/Product/991",
+                    "title": "40 Inch Standing Desk",
+                    "url": "https://example-desk.myshopify.com/products/40-desk",
+                    "sku": "DSK-40-OAK",
+                    "price_range": {"min": 14900},
+                    "media": [
+                        {"url": "https://cdn.shopify.com/s/files/1/desk_1.jpg"},
+                        {"url": "https://cdn.shopify.com/s/files/1/desk_2.jpg"},
+                        {"url": "https://cdn.shopify.com/s/files/1/desk_3.jpg"},
+                    ],
+                    "variants": [
+                        {
+                            "id": "gid://shopify/ProductVariant/99101",
+                            "title": "Warm Oak",
+                            "sku": "DSK-40-OAK-V1",
+                            "price": 14900,
+                            "available": True,
+                            "image": {"url": "https://cdn.shopify.com/s/files/1/desk_oak.jpg"},
+                        }
+                    ],
+                }
+            ]
+        },
+        category="desk",
+    )
+    assert len(parsed) == 1
+    assert len(parsed[0].images) == 4
+    assert parsed[0].merchant_sku == "DSK-40-OAK-V1"
+    assert parsed[0].product_url == "https://example-desk.myshopify.com/products/40-desk"
+
+    # 2. Seed a multi-SKU session and verify <2ms `/alternatives` + `skip_render=True` footprint updates
+    z1 = SpatialZone(
+        zone_id="zone_1",
+        label="Zone 1 · Alcove",
+        target_categories=["desk", "chair"],
+        bbox=BoundingBox(y_min=300, x_min=150, y_max=850, x_max=750),
+        width_in=52.0,
+        depth_in=60.0,
+        usable_width_in=50.0,
+    )
+    desk_a = ShopifySKU(
+        sku_id="desk_a",
+        gid="gid://shopify/Product/101",
+        selected_variant_id="1010",
+        selected_variant_gid="gid://shopify/ProductVariant/1010",
+        title="47 Inch White Desk",
+        category="desk",
+        zone_id="zone_1",
+        merchant_name="StoreA",
+        shop_domain="store-a.myshopify.com",
+        price_cents=12000,
+        price_usd=120.0,
+        image_url="https://cdn.shopify.com/a1.jpg",
+        images=["https://cdn.shopify.com/a1.jpg", "https://cdn.shopify.com/a2.jpg"],
+        dimensions=ProductDimensions(width_in=47.0, depth_in=24.0, height_in=29.5),
+        verified_at="2026-11-21T00:00:00Z",
+    )
+    desk_b = ShopifySKU(
+        sku_id="desk_b",
+        gid="gid://shopify/Product/102",
+        selected_variant_id="1020",
+        selected_variant_gid="gid://shopify/ProductVariant/1020",
+        title="40 Inch Compact Walnut Desk",
+        category="desk",
+        zone_id="zone_1",
+        merchant_name="StoreB",
+        shop_domain="store-b.myshopify.com",
+        price_cents=9900,
+        price_usd=99.0,
+        image_url="https://cdn.shopify.com/b1.jpg",
+        images=["https://cdn.shopify.com/b1.jpg", "https://cdn.shopify.com/b2.jpg"],
+        dimensions=ProductDimensions(width_in=40.0, depth_in=20.0, height_in=29.5),
+        verified_at="2026-11-21T00:00:00Z",
+    )
+    chair_a = ShopifySKU(
+        sku_id="chair_a",
+        gid="gid://shopify/Product/201",
+        selected_variant_id="2010",
+        selected_variant_gid="gid://shopify/ProductVariant/2010",
+        title="Ergonomic Mesh Chair",
+        category="chair",
+        zone_id="zone_1",
+        merchant_name="StoreA",
+        shop_domain="store-a.myshopify.com",
+        price_cents=15000,
+        price_usd=150.0,
+        image_url="https://cdn.shopify.com/c1.jpg",
+        images=["https://cdn.shopify.com/c1.jpg"],
+        dimensions=ProductDimensions(width_in=25.0, depth_in=24.0, height_in=42.0),
+        verified_at="2026-11-21T00:00:00Z",
+    )
+    sess = SpatialSession(
+        session_id="sess_tabs_test",
+        prompt="Desk and chair",
+        budget_usd=400.0,
+        room_images=[(b"fake", "image/jpeg")],
+        scale=ScaleReadyEvent(
+            session_id="sess_tabs_test",
+            detected_scope="nook",
+            calibration_layer=1,
+            calibration_summary="Outlet",
+            zones=[z1],
+        ),
+        candidates_by_category={"desk": [desk_a, desk_b], "chair": [chair_a]},
+        verified_items=[desk_a, chair_a],
+    )
+    put_session(sess)
+
+    with TestClient(app) as client:
+        r_alt = client.get("/api/session/sess_tabs_test/alternatives")
+        assert r_alt.status_code == 200
+        alt_data = r_alt.json()
+        assert len(alt_data["sku_tabs"]) == 2
+        assert alt_data["sku_tabs"][0]["tab_label"] == "#1 · Desk"
+        assert len(alt_data["sku_tabs"][0]["active_sku"]["images"]) == 2
+        assert alt_data["sku_tabs"][0]["alternatives"][0]["sku"]["sku_id"] == "desk_b"
+
+        # Instant `skip_render=True` swap from 47" desk -> 40" desk updates remaining_width_in from 3.0" -> 10.0"!
+        r_swap = client.post(
+            "/api/session/sess_tabs_test/swap",
+            json={
+                "zone_id": "zone_1",
+                "target_item_id": "desk_a",
+                "new_sku_id": "desk_b",
+                "skip_render": True,
+            },
+        )
+        assert r_swap.status_code == 200
+        sdata = r_swap.json()
+        assert sdata["render"] is None
+        assert sdata["swapped_item"]["sku_id"] == "desk_b"
+        assert sdata["zones"][0]["occupied_width_in"] == 40.0
+        assert sdata["zones"][0]["remaining_width_in"] == 10.0
+        assert sdata["zones"][0]["remaining_clearance_in"] == 40.0

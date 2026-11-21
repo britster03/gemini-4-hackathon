@@ -55,6 +55,10 @@ class SpatialZone(BaseModel):
     clearance_required_in: float = 24.0
     wall_margin_in: float = 2.0
     usable_width_in: float
+    occupied_width_in: float = 0.0
+    remaining_width_in: float | None = None
+    occupied_depth_in: float = 0.0
+    remaining_clearance_in: float | None = None
     confidence_tier: Literal["high", "medium", "low"] = "high"
     tolerance_in: float = 1.5
     overridden_by_user: bool = False
@@ -87,11 +91,13 @@ class ProductVariant(BaseModel):
     variant_id: str
     gid: str
     title: str
+    sku_code: str | None = None
     option_values: dict[str, str] = Field(default_factory=dict)
     price_cents: int
     price_usd: float
     available: bool = True
     image_url: str | None = None
+    gallery_images: list[str] = Field(default_factory=list)
 
 
 class DecisionsCatalogGate(BaseModel):
@@ -105,6 +111,7 @@ class DecisionsCatalogGate(BaseModel):
 class ShopifySKU(BaseModel):
     sku_id: str
     gid: str  # e.g., "gid://shopify/Product/..."
+    merchant_sku: str | None = None
     selected_variant_id: str
     selected_variant_gid: str
     title: str
@@ -116,8 +123,10 @@ class ShopifySKU(BaseModel):
     price_usd: float
     currency: str = "USD"
     image_url: str
+    images: list[str] = Field(default_factory=list)
     product_url: str | None = None
     description_plain: str = ""
+    top_features: list[str] = Field(default_factory=list)
     dimensions: ProductDimensions = Field(default_factory=ProductDimensions)
     fit_status: FitStatus = "verified_fit"
     fit_badge_text: str = ""
@@ -270,11 +279,36 @@ class CheckoutCompleteResponse(BaseModel):
     mcp_trace: MCPCallTrace | None = None
 
 
+class ThreadAlternativeCard(BaseModel):
+    rank: int
+    sku: ShopifySKU
+    target_zone_id: str
+    target_item_id: str | None = None
+    price_delta_usd: float
+    width_delta_in: float | None = None
+    delta_badge: str  # e.g., "-$32.00 · Fits 25.0\" W"
+    hook_blocked: bool = False
+    block_reason: str | None = None
+
+
+class SKUTabPanel(BaseModel):
+    tab_index: int
+    tab_id: str
+    tab_label: str  # e.g., "#1 · Desk"
+    zone_id: str
+    zone_label: str
+    active_sku: ShopifySKU
+    alternatives: list[ThreadAlternativeCard] = Field(default_factory=list)
+
+
 class CartReadyEvent(BaseModel):
     session_id: str
     status: Literal["verified", "safe_refusal"] = "verified"
     refusal_reason: str | None = None
     verified_items: list[ShopifySKU]
+    sku_tabs: list[SKUTabPanel] = Field(default_factory=list)
+    alternatives_by_sku: dict[str, list[ThreadAlternativeCard]] = Field(default_factory=dict)
+    zones: list[SpatialZone] = Field(default_factory=list)
     total_cents: int
     total_usd: float
     budget_usd: float
@@ -339,23 +373,12 @@ class ThreadRequest(BaseModel):
     pinned_item_id: str | None = None
 
 
-class ThreadAlternativeCard(BaseModel):
-    rank: int
-    sku: ShopifySKU
-    target_zone_id: str
-    target_item_id: str | None = None
-    price_delta_usd: float
-    width_delta_in: float | None = None
-    delta_badge: str  # e.g., "-$32.00 · Fits 25.0\" W"
-    hook_blocked: bool = False
-    block_reason: str | None = None
-
-
 class SwapRequest(BaseModel):
     zone_id: str
     target_item_id: str
     new_sku_id: str
     variant_id: str | None = None
+    skip_render: bool = False
 
 
 class SwapResponse(BaseModel):
@@ -364,11 +387,14 @@ class SwapResponse(BaseModel):
     versions_available: list[str]
     swapped_item: ShopifySKU
     verified_items: list[ShopifySKU]
+    sku_tabs: list[SKUTabPanel] = Field(default_factory=list)
+    alternatives_by_sku: dict[str, list[ThreadAlternativeCard]] = Field(default_factory=dict)
+    zones: list[SpatialZone] = Field(default_factory=list)
     total_usd: float
     budget_usd: float
     checkouts: list[MerchantUCPCheckout]
     hook_event: HookEvent
-    render: RenderReadyEvent
+    render: RenderReadyEvent | None = None
 
 
 class ThreadResponse(BaseModel):
@@ -402,6 +428,8 @@ class ZoneOverrideResponse(BaseModel):
     zones: list[SpatialZone]
     hook_event: HookEvent
     verified_items: list[ShopifySKU]
+    sku_tabs: list[SKUTabPanel] = Field(default_factory=list)
+    alternatives_by_sku: dict[str, list[ThreadAlternativeCard]] = Field(default_factory=dict)
     all_items_still_fit: bool
 
 

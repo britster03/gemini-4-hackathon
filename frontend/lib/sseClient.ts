@@ -944,13 +944,25 @@ export async function fetchBenchmarkData(useMock: boolean): Promise<BenchmarkDat
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const failure_audits = (raw.where_it_still_breaks || []).map((f: any, idx: number) => ({
-        id: `audit-${idx + 1}`,
-        title: String(f.failure_mode ?? ""),
-        room_ref: String(f.caught_on ?? "NYU Eval"),
-        what_broke: String(f.failure_mode ?? ""),
-        how_we_fixed_it: String(f.mitigation ?? ""),
+      const stressAudits = (raw.stress_suite?.cases || []).map((c: any, idx: number) => ({
+        id: `stress-${idx + 1}`,
+        title: `PASS (${Number(c.latency_ms || 0).toFixed(2)} ms) · ${String(c.name ?? "")}`,
+        room_ref: String(c.case_id ?? "stress_suite"),
+        what_broke: `Adversarial Case #${idx + 1}: ${String(c.name ?? "")}`,
+        how_we_fixed_it: String(c.trace ?? ""),
       }));
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const failure_audits = [
+        ...stressAudits,
+        ...(raw.where_it_still_breaks || []).map((f: any, idx: number) => ({
+          id: `audit-${idx + 1}`,
+          title: String(f.failure_mode ?? ""),
+          room_ref: String(f.caught_on ?? "NYU Eval"),
+          what_broke: String(f.failure_mode ?? ""),
+          how_we_fixed_it: String(f.mitigation ?? ""),
+        })),
+      ];
 
       return {
         rooms_tested: Number(raw.rooms_tested ?? room_samples.length),

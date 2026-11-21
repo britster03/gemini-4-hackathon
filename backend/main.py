@@ -1254,6 +1254,9 @@ async def patch_session_zone(
 async def get_benchmark_results() -> JSONResponse:
     if EVAL_RESULTS_PATH.exists():
         data = json.loads(EVAL_RESULTS_PATH.read_text(encoding="utf-8"))
+        stress_path = EVAL_RESULTS_PATH.parent / "stress_results.json"
+        if stress_path.exists():
+            data["stress_suite"] = json.loads(stress_path.read_text(encoding="utf-8"))
         return JSONResponse(content=data)
     return JSONResponse(
         status_code=200,

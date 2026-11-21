@@ -203,7 +203,7 @@ export function BenchmarkDrawer({ open, onClose, data }: BenchmarkDrawerProps) {
             </div>
 
             {selectedRoom && (
-              <div className="rounded-xl p-3.5 bg-at-bg border border-at-border space-y-2 font-mono text-xs tabular-nums-strict">
+              <div className="rounded-xl p-3.5 bg-at-bg border border-at-border space-y-3 font-mono text-xs tabular-nums-strict">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-at-ink font-sans font-semibold">
                     {selectedRoom.room_label} ({selectedRoom.room_id})
@@ -213,7 +213,20 @@ export function BenchmarkDrawer({ open, onClose, data }: BenchmarkDrawerProps) {
                     {selectedRoom.calibration_layer}
                   </span>
                 </div>
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                {!failedThumbIds[selectedRoom.room_id] && (
+                  <div className="rounded-lg overflow-hidden border border-at-border bg-[#0C0D10] aspect-[16/9] flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={
+                        selectedRoom.image_url ||
+                        `${API_BASE_URL}/api/benchmark/assets/${selectedRoom.room_id}_rgb.jpg`
+                      }
+                      alt={selectedRoom.room_label}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-2">
                   <div className="p-2 rounded-lg bg-at-card border border-at-border">
                     <p className="text-[10px] text-at-micro">Kinect GT Width</p>
                     <p className="text-sm text-at-ink">
@@ -233,16 +246,23 @@ export function BenchmarkDrawer({ open, onClose, data }: BenchmarkDrawerProps) {
                     </p>
                   </div>
                 </div>
-                <p className="text-[11px] font-sans text-at-muted">
-                  Chosen: <span className="text-at-ink">{selectedRoom.chosen_sku}</span>
-                  {selectedRoom.blocked_sku && (
-                    <>
-                      {" "}
-                      · Blocked:{" "}
-                      <span className="text-at-coral">{selectedRoom.blocked_sku}</span>
-                    </>
-                  )}
-                </p>
+                <div className="p-2.5 rounded-lg bg-at-card border border-at-border space-y-1 text-[11px]">
+                  <p className="font-sans text-at-muted">
+                    <span className="font-mono text-at-cyan">Anchor / Trace:</span>{" "}
+                    <span className="text-at-ink">{selectedRoom.note}</span>
+                  </p>
+                  <p className="font-sans text-at-muted">
+                    <span className="font-mono text-at-emerald">Chosen SKU:</span>{" "}
+                    <span className="text-at-ink">{selectedRoom.chosen_sku}</span>
+                    {selectedRoom.blocked_sku && (
+                      <>
+                        {" "}
+                        · <span className="font-mono text-at-coral">Blocked:</span>{" "}
+                        <span className="text-at-coral">{selectedRoom.blocked_sku}</span>
+                      </>
+                    )}
+                  </p>
+                </div>
                 <p className="text-[11px] font-sans text-at-micro">
                   {selectedRoom.note}
                 </p>

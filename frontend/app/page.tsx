@@ -148,14 +148,28 @@ export default function DatumStudioPage() {
     setElapsedSec(0);
     setIsStreaming(true);
 
-    const isPreset = Boolean(payload.preset);
     setActivePresetId(payload.preset?.id ?? null);
+
+    let filesToUpload: File[] = payload.images.map((i) => i.file);
+    if (filesToUpload.length === 0 && payload.preset?.room_image_url) {
+      try {
+        const imgResp = await fetch(payload.preset.room_image_url);
+        const blob = await imgResp.blob();
+        filesToUpload = [
+          new File([blob], `${payload.preset.id}.jpg`, {
+            type: blob.type || "image/jpeg",
+          }),
+        ];
+      } catch {
+        filesToUpload = [];
+      }
+    }
 
     if (payload.preset) {
       setAngleTabs([
         {
           id: "angle-1",
-          label: "Main View",
+          label: payload.preset.title,
           imageUrl: payload.preset.room_image_url,
         },
       ]);
@@ -172,11 +186,11 @@ export default function DatumStudioPage() {
 
     setAppPhase("studio");
 
-    const runWithMock = DEFAULT_USE_MOCK || isPreset;
+    const runWithMock = DEFAULT_USE_MOCK || filesToUpload.length === 0;
 
     await startSessionStream(
       {
-        images: payload.images.map((i) => i.file),
+        images: filesToUpload,
         exifFocalMm:
           payload.images[0]?.exifFocalMm ?? payload.preset?.exif_focal_mm ?? null,
         prompt: payload.prompt,
@@ -249,7 +263,7 @@ export default function DatumStudioPage() {
       zoneId: zone.zone_id,
       overrideWidthIn: newWidthIn,
       overrideDepthIn: zone.depth_in,
-      useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+      useMock: DEFAULT_USE_MOCK || !sessionId || sessionId.startsWith("mock_"),
       currentItems: cartData?.items,
     });
 
@@ -297,7 +311,7 @@ export default function DatumStudioPage() {
         targetItemId: item.item_id,
         newSkuId: item.sku_id,
         variantId: item.selected_variant_id,
-        useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+        useMock: DEFAULT_USE_MOCK || !sessionId || sessionId.startsWith("mock_"),
         currentItems: cartData?.items,
         nextVersionNumber: versions.length + 1,
         mockPresetId: activePresetId,
@@ -327,7 +341,11 @@ export default function DatumStudioPage() {
     }
   };
 
-  const handleSendUtterance = async (utterance: string) => {
+  const handleSendUtterance = async (
+    utterance: string,
+    explicitPinItem?: VerifiedCartItem | null
+  ) => {
+    const activePin = explicitPinItem !== undefined ? explicitPinItem : pinnedItem;
     setIsSendingThread(true);
     setMessages((prev) => [
       ...prev,
@@ -335,8 +353,8 @@ export default function DatumStudioPage() {
         id: `u-${Date.now()}`,
         role: "user",
         text: utterance,
-        pinned_chip: pinnedItem
-          ? `@${pinnedItem.zone_id} · ${pinnedItem.category}`
+        pinned_chip: activePin
+          ? `@${activePin.zone_id} · ${activePin.category}`
           : pinnedZone
           ? `@${pinnedZone.zone_id}`
           : null,
@@ -348,9 +366,9 @@ export default function DatumStudioPage() {
       const res = await sendThreadUtterance({
         sessionId: sessionId || "mock",
         utterance,
-        pinnedZoneId: pinnedItem?.zone_id ?? pinnedZone?.zone_id ?? null,
-        pinnedItemId: pinnedItem?.item_id ?? null,
-        useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+        pinnedZoneId: activePin?.zone_id ?? pinnedZone?.zone_id ?? null,
+        pinnedItemId: activePin?.item_id ?? null,
+        useMock: DEFAULT_USE_MOCK || !sessionId || sessionId.startsWith("mock_"),
       });
 
       if (res.executed_swap?.allowed && res.executed_swap.new_version) {
@@ -401,7 +419,7 @@ export default function DatumStudioPage() {
         zoneId: alt.zone_id,
         targetItemId: alt.target_item_id,
         newSkuId: alt.sku_id,
-        useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+        useMock: DEFAULT_USE_MOCK || !sessionId || sessionId.startsWith("mock_"),
         currentItems: cartData?.items,
         nextVersionNumber: versions.length + 1,
         mockPresetId: activePresetId,
@@ -463,9 +481,10 @@ export default function DatumStudioPage() {
   ) => {
     setPinnedZone(null);
     setPinnedItem(item);
-    if (promptOverride) {
-      handleSendUtterance(promptOverride);
-    }
+    handleSendUtterance(
+      promptOverride || `Show alternatives for ${item.category}`,
+      item
+    );
   };
 
   const activeAngleUrl =
@@ -593,8 +612,7 @@ export default function DatumStudioPage() {
               hoveredItemId={hoveredItemId}
               onHoverItem={setHoveredItemId}
               onPinItem={(item) => {
-                setPinnedZone(null);
-                setPinnedItem(item);
+                handleRequestSwapForItem(item);
               }}
               onSelectZone={(zone) => {
                 setPinnedItem(null);

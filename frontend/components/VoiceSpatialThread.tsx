@@ -10,8 +10,6 @@ import {
   Send,
   ShieldAlert,
   Sparkles,
-  Volume2,
-  VolumeX,
   X,
 } from "lucide-react";
 import type {
@@ -67,33 +65,32 @@ export function VoiceSpatialThread({
   const [input, setInput] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
-  const [voiceReplyOn, setVoiceReplyOn] = useState(true);
   const [activeSwapSkuId, setActiveSwapSkuId] = useState<string | null>(null);
   const [brokenImgIds, setBrokenImgIds] = useState<Record<string, boolean>>({});
+  const [streamedText, setStreamedText] = useState<string>("");
+  const [streamedMsgId, setStreamedMsgId] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const lastSpokenIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isSwapping) setActiveSwapSkuId(null);
   }, [isSwapping]);
 
-  // Two-way voice: speak assistant replies aloud when voiceReplyOn is enabled
+  // Smooth streaming text reveal for the latest assistant message (no voice TTS)
+  const latestAssistant = [...messages].reverse().find((m) => m.role === "assistant");
   useEffect(() => {
-    if (!voiceReplyOn || typeof window === "undefined" || !("speechSynthesis" in window)) {
-      return;
-    }
-    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-    if (!lastAssistant || lastAssistant.id === lastSpokenIdRef.current) return;
-    lastSpokenIdRef.current = lastAssistant.id;
-    try {
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(lastAssistant.text);
-      utter.rate = 1.05;
-      window.speechSynthesis.speak(utter);
-    } catch {
-      // Ignore browser autoplay restrictions cleanly
-    }
-  }, [messages, voiceReplyOn]);
+    if (!latestAssistant) return;
+    if (latestAssistant.id === streamedMsgId) return;
+    setStreamedMsgId(latestAssistant.id);
+    const full = latestAssistant.text;
+    let idx = 0;
+    setStreamedText("");
+    const timer = window.setInterval(() => {
+      idx = Math.min(full.length, idx + 4);
+      setStreamedText(full.slice(0, idx));
+      if (idx >= full.length) window.clearInterval(timer);
+    }, 14);
+    return () => window.clearInterval(timer);
+  }, [latestAssistant, streamedMsgId]);
 
   const latestWithAlts = [...messages]
     .reverse()
@@ -210,7 +207,16 @@ export function VoiceSpatialThread({
                       : "text-at-ink"
                   }`}
                 >
-                  {m.role === "user" ? `You: "${m.text}"` : m.text}
+                  {m.role === "user" ? (
+                    <span>
+                      <strong className="text-at-ink">You:</strong> &ldquo;{m.text}&rdquo;
+                    </span>
+                  ) : (
+                    <span className="leading-relaxed">
+                      <strong className="text-at-cyan font-mono text-[11px] mr-1.5">DATUM</strong>
+                      {m.id === streamedMsgId ? streamedText : m.text}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -345,24 +351,6 @@ export function VoiceSpatialThread({
             <span className="hidden sm:inline text-xs font-medium">
               {isListening ? "Listening…" : "Speak"}
             </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (voiceReplyOn && typeof window !== "undefined" && "speechSynthesis" in window) {
-                window.speechSynthesis.cancel();
-              }
-              setVoiceReplyOn((v) => !v);
-            }}
-            className={`h-10 w-10 rounded-full flex items-center justify-center border transition-colors shrink-0 cursor-pointer ${
-              voiceReplyOn
-                ? "bg-at-card border-at-border text-at-emerald hover:border-at-emerald"
-                : "bg-at-card border-at-border text-at-muted hover:text-at-ink"
-            }`}
-            title={voiceReplyOn ? "Spoken voice replies ON (click to mute)" : "Spoken voice replies muted"}
-          >
-            {voiceReplyOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           </button>
 
           {scopeChipLabel && (

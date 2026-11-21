@@ -70,7 +70,7 @@ export default function UnderTheHoodPage() {
   }, []);
 
   return (
-    <div className="min-h-screen w-screen bg-[#0C0D10] text-[#F4F5F7] theme-dark">
+    <div className="h-screen w-screen overflow-y-auto bg-[#0C0D10] text-[#F4F5F7] theme-dark">
       {/* Full-Width Top Bar */}
       <header className="h-12 px-6 border-b border-white/10 bg-[#14161B] flex items-center justify-between gap-4 sticky top-0 z-40">
         <div className="flex items-center gap-3">

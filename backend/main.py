@@ -29,9 +29,12 @@ from PIL import Image
 
 from backend.adapters import (
     annotate_item_fit_badges,
+    build_sku_tabs_and_alternatives,
     extract_requested_categories,
     run_scale_calibration,
     solve_combinatorial_bundle,
+    solve_combinatorial_bundle_async,
+    update_zone_footprints,
     verify_bundle_deterministic,
 )
 from backend.config import (
@@ -123,17 +126,40 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
         primary_img_bytes, primary_mime = session.room_images[0]
 
         # ------------------------------------------------------------------
-        # Stage 1: Zero-Measurement Scale Calibration (`scale_ready`)
+        # Stage 1: Zero-Measurement Scale Calibration across ALL 1-3 uploaded angles (`scale_ready`)
         # ------------------------------------------------------------------
-        scale_ev = await run_scale_calibration(
-            session_id=session.session_id,
-            image_bytes=primary_img_bytes,
-            mime_type=primary_mime,
-            prompt=session.prompt,
-            scope=session.scope,
-            exif_focal_mm=session.exif_focal_mm,
-            thinking_level=os.getenv("CLEARBUY_SCALE_THINKING_LEVEL", "low"),
-        )
+        scale_tasks = [
+            run_scale_calibration(
+                session_id=session.session_id,
+                image_bytes=img_b,
+                mime_type=img_m,
+                prompt=session.prompt,
+                scope=session.scope,
+                exif_focal_mm=session.exif_focal_mm,
+                thinking_level=os.getenv("CLEARBUY_SCALE_THINKING_LEVEL", "low"),
+            )
+            for img_b, img_m in session.room_images[:3]
+        ]
+        angle_scales = await asyncio.gather(*scale_tasks)
+        scale_ev = angle_scales[0]
+        if len(angle_scales) > 1:
+            merged_zones = list(scale_ev.zones)
+            merged_anchors = list(scale_ev.anchors_detected)
+            merged_protected = list(scale_ev.protected_anchors)
+            for a_idx, extra_sc in enumerate(angle_scales[1:], start=2):
+                for z in extra_sc.zones:
+                    zc = z.model_copy(deep=True)
+                    zc.zone_id = f"A{a_idx}_{zc.zone_id}"
+                    zc.label = f"Angle {a_idx} · {zc.label}"
+                    merged_zones.append(zc)
+                merged_anchors.extend(extra_sc.anchors_detected)
+                merged_protected.extend(extra_sc.protected_anchors)
+            scale_ev.zones = merged_zones
+            scale_ev.anchors_detected = merged_anchors
+            scale_ev.protected_anchors = merged_protected
+            scale_ev.calibration_summary = (
+                f"{scale_ev.calibration_summary} · {len(angle_scales)} angles calibrated"
+            )
         session.scale = scale_ev
         session.emit_sse("scale_ready", scale_ev.model_dump())
 
@@ -195,8 +221,9 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
         # ------------------------------------------------------------------
         # Stage 3: `hooks.json` Combinatorial Solver (`hook_event` DENY -> ALLOW)
         # ------------------------------------------------------------------
-        verified_bundle, hook_events, refusal_reason = solve_combinatorial_bundle(
+        verified_bundle, hook_events, refusal_reason = await solve_combinatorial_bundle_async(
             session_id=session.session_id,
+            prompt=session.prompt,
             zones=scale_ev.zones,
             candidates_by_category=candidates_by_category,
             budget_usd=session.budget_usd,
@@ -211,6 +238,7 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
                 status="safe_refusal",
                 refusal_reason=refusal_reason or "No compliant bundle fits constraints.",
                 verified_items=[],
+                zones=scale_ev.zones,
                 total_cents=0,
                 total_usd=0.0,
                 budget_usd=session.budget_usd,
@@ -248,9 +276,20 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
             # Keep original search variant snapshot if enriched default variant jumped in price
             enriched_items = verified_bundle
 
+        scale_ev.zones = update_zone_footprints(scale_ev.zones, enriched_items)
+        sku_tabs, alts_by_sku = build_sku_tabs_and_alternatives(
+            session_id=session.session_id,
+            zones=scale_ev.zones,
+            verified_items=enriched_items,
+            candidates_by_category=candidates_by_category,
+            budget_usd=session.budget_usd,
+        )
+
         checkouts, ucp_traces = await mcp.create_or_update_merchant_checkouts(enriched_items)
         session.mcp_calls.extend(ucp_traces)
         session.verified_items = enriched_items
+        session.sku_tabs = sku_tabs
+        session.alternatives_by_sku = alts_by_sku
         session.checkouts = checkouts
 
         total_cents = sum(it.price_cents for it in enriched_items)
@@ -259,6 +298,9 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
             session_id=session.session_id,
             status="verified",
             verified_items=enriched_items,
+            sku_tabs=sku_tabs,
+            alternatives_by_sku=alts_by_sku,
+            zones=scale_ev.zones,
             total_cents=total_cents,
             total_usd=total_usd,
             budget_usd=session.budget_usd,
@@ -348,6 +390,10 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
             elapsed_ms=int((time.perf_counter() - t_ren) * 1000),
         )
         session.emit_sse("render_ready", render_ev.model_dump())
+
+        # Speculatively pre-warm top compliant alternatives in parallel so 1-click swaps are <150ms instant!
+        if has_live_gemini_credentials() and os.getenv("CLEARBUY_PREWARM_SWAPS", "1") == "1":
+            asyncio.create_task(_prewarm_top_alternatives(session))
     except Exception as exc:
         session.emit_sse(
             "session_error",
@@ -355,6 +401,64 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
         )
     finally:
         session.mark_complete()
+
+
+async def _prewarm_top_alternatives(session: SpatialSession) -> None:
+    """Speculatively pre-render top compliant alternatives in parallel (`gemini-nano-banana-2.1`) for instant swaps."""
+    try:
+        if not session.scale or not session.room_images or not session.last_render_bytes:
+            return
+        orig_room_bytes, orig_mime = session.room_images[0]
+        prior_bytes = session.last_render_bytes
+        prior_inter_id = session.last_render_interaction_id
+        zones = session.scale.zones
+
+        jobs: list[tuple[ShopifySKU, ShopifySKU, Any]] = []
+        for active_item in session.verified_items:
+            alts = session.alternatives_by_sku.get(active_item.sku_id) or []
+            for card in alts:
+                if card.hook_blocked or card.sku.sku_id == active_item.sku_id:
+                    continue
+                zone_obj = next(
+                    (z for z in zones if z.zone_id == active_item.zone_id),
+                    zones[0] if zones else None,
+                )
+                jobs.append((active_item, card.sku, zone_obj))
+                break  # Top 1 compliant alternative per active item (parallel across all items!)
+            if len(jobs) >= 4:
+                break
+
+        async def _run_one(t_item: ShopifySKU, cand: ShopifySKU, z_obj: Any) -> None:
+            try:
+                s_bytes, s_mime, s_inter, s_refs = await render_surgical_swap(
+                    room_image_bytes=orig_room_bytes,
+                    prior_render_bytes=prior_bytes,
+                    prior_interaction_id=prior_inter_id,
+                    target_item=t_item,
+                    new_sku=cand,
+                    zone=z_obj,
+                )
+                qa = await audit_rendered_room(
+                    original_room_bytes=orig_room_bytes,
+                    original_mime=orig_mime,
+                    sku_images=s_refs,
+                    rendered_room_bytes=s_bytes,
+                    rendered_mime=s_mime,
+                    was_repaired=False,
+                )
+                session.prewarmed_swaps[(t_item.sku_id, cand.sku_id)] = (
+                    s_bytes,
+                    s_mime,
+                    s_inter,
+                    qa,
+                )
+            except Exception:
+                pass
+
+        if jobs:
+            await asyncio.gather(*[_run_one(t, c, z) for t, c, z in jobs])
+    except Exception:
+        pass
 
 
 async def _stream_session_events(session: SpatialSession) -> AsyncIterator[str]:
@@ -561,7 +665,8 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             },
         )
 
-    # 2. Enrich variant swatches via `get_product` + update per-merchant UCP checkouts
+    # 2. Enrich variant swatches & full gallery photos via `get_product` + update UCP checkouts
+    t_cart_upd = time.perf_counter()
     mcp = ShopMCPClient()
     new_sku_enriched, v_trace = await mcp.enrich_product_variants(new_sku)
     session.mcp_calls.append(v_trace)
@@ -575,6 +680,8 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             new_sku_enriched.selected_variant_gid = mv.gid
             new_sku_enriched.price_cents = mv.price_cents
             new_sku_enriched.price_usd = mv.price_usd
+            if mv.image_url:
+                new_sku_enriched.image_url = mv.image_url
 
     updated_cart = annotate_item_fit_badges(
         zones,
@@ -583,55 +690,126 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             for it in session.verified_items
         ],
     )
+    zones = update_zone_footprints(zones, updated_cart)
+    if session.scale:
+        session.scale.zones = zones
+
+    sku_tabs, alts_by_sku = build_sku_tabs_and_alternatives(
+        session_id=session.session_id,
+        zones=zones,
+        verified_items=updated_cart,
+        candidates_by_category=session.candidates_by_category,
+        budget_usd=session.budget_usd,
+    )
     updated_checkouts, ucp_traces = await mcp.create_or_update_merchant_checkouts(
         verified_items=updated_cart,
         existing_checkouts=session.checkouts,
     )
     session.mcp_calls.extend(ucp_traces)
 
-    # 3. Stateful Nano Banana 2.1 surgical swap + `gemini-decision-1` QA
+    total_cents = sum(it.price_cents for it in updated_cart)
+    total_usd = round(total_cents / 100.0, 2)
+    swapped_final = next(
+        (it for it in updated_cart if it.sku_id == new_sku_enriched.sku_id),
+        new_sku_enriched,
+    )
+
+    session.verified_items = updated_cart
+    session.sku_tabs = sku_tabs
+    session.alternatives_by_sku = alts_by_sku
+    session.checkouts = updated_checkouts
+
+    # Emit instant `cart_ready` SSE BEFORE ~14s Nano Banana render so UI updates dimensions, tabs & checkouts in <300ms!
+    cart_ev = CartReadyEvent(
+        session_id=session.session_id,
+        status="verified",
+        verified_items=updated_cart,
+        sku_tabs=sku_tabs,
+        alternatives_by_sku=alts_by_sku,
+        zones=zones,
+        total_cents=total_cents,
+        total_usd=total_usd,
+        budget_usd=session.budget_usd,
+        remaining_budget_usd=round(session.budget_usd - total_usd, 2),
+        checkouts=updated_checkouts,
+        mcp_calls=[v_trace] + ucp_traces,
+        elapsed_ms=int((time.perf_counter() - t_cart_upd) * 1000),
+    )
+    session.cart = cart_ev
+    session.emit_sse("cart_ready", cart_ev.model_dump())
+
+    # Fast-path (`skip_render=True`, e.g. variant finish swatch toggle or instant dimension preview)
+    if req.skip_render:
+        session.save_metadata()
+        versions_avail = [v.version_id for v in session.versions] or ["v1"]
+        cur_vid = versions_avail[-1]
+        return SwapResponse(
+            session_id=session.session_id,
+            version_id=cur_vid,
+            versions_available=versions_avail,
+            swapped_item=swapped_final,
+            verified_items=updated_cart,
+            sku_tabs=sku_tabs,
+            alternatives_by_sku=alts_by_sku,
+            zones=zones,
+            total_usd=total_usd,
+            budget_usd=session.budget_usd,
+            checkouts=updated_checkouts,
+            hook_event=hook_ev,
+            render=None,
+        )
+
+    # 3. Stateful Nano Banana 2.1 surgical swap + `gemini-decision-1` QA (instant <150ms if pre-warmed!)
     t_swap = time.perf_counter()
     orig_room_bytes, orig_mime = session.room_images[0]
     prior_bytes = session.last_render_bytes or orig_room_bytes
     zone_obj = next((z for z in zones if z.zone_id == new_sku_enriched.zone_id), zones[0] if zones else None)
 
-    swap_bytes, swap_mime, new_inter_id, new_refs = await render_surgical_swap(
-        room_image_bytes=orig_room_bytes,
-        prior_render_bytes=prior_bytes,
-        prior_interaction_id=session.last_render_interaction_id,
-        target_item=target_item,
-        new_sku=new_sku_enriched,
-        zone=zone_obj,
-    )
-
-    qa_verdict = await audit_rendered_room(
-        original_room_bytes=orig_room_bytes,
-        original_mime=orig_mime,
-        sku_images=new_refs,
-        rendered_room_bytes=swap_bytes,
-        rendered_mime=swap_mime,
-        was_repaired=False,
-    )
-
     repaired = False
     repair_reason: str | None = None
-    if qa_verdict.status == "failed" and qa_verdict.defect_summary:
-        repair_reason = qa_verdict.defect_summary
-        swap_bytes, swap_mime, new_inter_id = await render_targeted_repair(
+    prewarmed = (
+        None
+        if req.variant_id
+        else session.prewarmed_swaps.pop((target_item.sku_id, new_sku_enriched.sku_id), None)
+    )
+    if prewarmed is not None:
+        swap_bytes, swap_mime, new_inter_id, qa_verdict = prewarmed
+    else:
+        swap_bytes, swap_mime, new_inter_id, new_refs = await render_surgical_swap(
             room_image_bytes=orig_room_bytes,
-            failed_render_bytes=swap_bytes,
-            prior_interaction_id=new_inter_id,
-            defect_summary=repair_reason,
+            prior_render_bytes=prior_bytes,
+            prior_interaction_id=session.last_render_interaction_id,
+            target_item=target_item,
+            new_sku=new_sku_enriched,
+            zone=zone_obj,
         )
-        repaired = True
+
         qa_verdict = await audit_rendered_room(
             original_room_bytes=orig_room_bytes,
             original_mime=orig_mime,
             sku_images=new_refs,
             rendered_room_bytes=swap_bytes,
             rendered_mime=swap_mime,
-            was_repaired=True,
+            was_repaired=False,
         )
+
+        if qa_verdict.status == "failed" and qa_verdict.defect_summary:
+            repair_reason = qa_verdict.defect_summary
+            swap_bytes, swap_mime, new_inter_id = await render_targeted_repair(
+                room_image_bytes=orig_room_bytes,
+                failed_render_bytes=swap_bytes,
+                prior_interaction_id=new_inter_id,
+                defect_summary=repair_reason,
+            )
+            repaired = True
+            qa_verdict = await audit_rendered_room(
+                original_room_bytes=orig_room_bytes,
+                original_mime=orig_mime,
+                sku_images=new_refs,
+                rendered_room_bytes=swap_bytes,
+                rendered_mime=swap_mime,
+                was_repaired=True,
+            )
 
     version_id = f"v{len(session.versions) + 1}"
     b64_swap = base64.b64encode(swap_bytes).decode("utf-8")
@@ -648,8 +826,6 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
     session.versions.append(ver)
     session.last_render_interaction_id = new_inter_id
     session.last_render_bytes = swap_bytes
-    session.verified_items = updated_cart
-    session.checkouts = updated_checkouts
     session.save_metadata()
 
     versions_avail = [v.version_id for v in session.versions]
@@ -667,23 +843,54 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
     )
     session.emit_sse("render_ready", render_ev.model_dump())
 
-    total_usd = round(sum(it.price_cents for it in updated_cart) / 100.0, 2)
-    swapped_final = next(
-        (it for it in updated_cart if it.sku_id == new_sku_enriched.sku_id),
-        new_sku_enriched,
-    )
     return SwapResponse(
         session_id=session.session_id,
         version_id=version_id,
         versions_available=versions_avail,
         swapped_item=swapped_final,
         verified_items=updated_cart,
+        sku_tabs=sku_tabs,
+        alternatives_by_sku=alts_by_sku,
+        zones=zones,
         total_usd=total_usd,
         budget_usd=session.budget_usd,
         checkouts=updated_checkouts,
         hook_event=hook_ev,
         render=render_ev,
     )
+
+
+@app.get("/api/session/{session_id}/alternatives")
+async def get_session_alternatives(
+    session_id: str,
+    sku_id: str | None = Query(None, description="Optional active cart SKU ID to filter alternatives"),
+) -> dict[str, Any]:
+    """Sub-2ms pre-vetted alternatives + multi-SKU tab inspector endpoint."""
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+    zones = session.scale.zones if session.scale else []
+    if not session.sku_tabs and session.verified_items:
+        tabs, alts = build_sku_tabs_and_alternatives(
+            session_id=session.session_id,
+            zones=zones,
+            verified_items=session.verified_items,
+            candidates_by_category=session.candidates_by_category,
+            budget_usd=session.budget_usd,
+        )
+        session.sku_tabs = tabs
+        session.alternatives_by_sku = alts
+    selected_alts = (
+        session.alternatives_by_sku.get(sku_id, [])
+        if sku_id
+        else [c for cards in session.alternatives_by_sku.values() for c in cards]
+    )
+    return {
+        "session_id": session.session_id,
+        "sku_tabs": [t.model_dump() for t in session.sku_tabs],
+        "alternatives": [c.model_dump() for c in selected_alts],
+        "zones": [z.model_dump() for z in zones],
+    }
 
 
 @app.post("/api/session/{session_id}/swap", response_model=SwapResponse)
@@ -1106,6 +1313,22 @@ async def patch_session_zone(
     session.verified_items = annotate_item_fit_badges(
         session.scale.zones, session.verified_items
     )
+    session.scale.zones = update_zone_footprints(
+        session.scale.zones, session.verified_items
+    )
+    target_zone = next(
+        (z for z in session.scale.zones if z.zone_id == target_zone.zone_id),
+        target_zone,
+    )
+    sku_tabs, alts_by_sku = build_sku_tabs_and_alternatives(
+        session_id=session.session_id,
+        zones=session.scale.zones,
+        verified_items=session.verified_items,
+        candidates_by_category=session.candidates_by_category,
+        budget_usd=session.budget_usd,
+    )
+    session.sku_tabs = sku_tabs
+    session.alternatives_by_sku = alts_by_sku
     session.save_metadata()
 
     return ZoneOverrideResponse(
@@ -1114,6 +1337,8 @@ async def patch_session_zone(
         zones=session.scale.zones,
         hook_event=hook_ev,
         verified_items=session.verified_items,
+        sku_tabs=sku_tabs,
+        alternatives_by_sku=alts_by_sku,
         all_items_still_fit=(hook_ev.decision == "allow"),
     )
 
@@ -1122,6 +1347,9 @@ async def patch_session_zone(
 async def get_benchmark_results() -> JSONResponse:
     if EVAL_RESULTS_PATH.exists():
         data = json.loads(EVAL_RESULTS_PATH.read_text(encoding="utf-8"))
+        stress_path = EVAL_RESULTS_PATH.parent / "stress_results.json"
+        if stress_path.exists():
+            data["stress_suite"] = json.loads(stress_path.read_text(encoding="utf-8"))
         return JSONResponse(content=data)
     return JSONResponse(
         status_code=200,

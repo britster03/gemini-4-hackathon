@@ -19,27 +19,8 @@
   --color-at-shop: var(--at-shop);
 }
 
-/* Section 03.C — Architectural Darkroom Studio (Default) */
+/* Warm Architectural Atelier — Default Light Theme */
 :root,
-.theme-dark {
-  color-scheme: dark;
-  --at-bg: #0C0D10;
-  --at-surface: #14161B;
-  --at-card: #14161B;
-  --at-border: rgba(255, 255, 255, 0.08);
-  --at-ink: #F4F5F7;
-  --at-muted: #9BA1AE;
-  --at-micro: #636A78;
-  --at-accent: #38BDF8;
-  --at-cyan: #38BDF8;
-  --at-emerald: #10B981;
-  --at-notice: #F59E0B;
-  --at-coral: #F43F5E;
-  --at-shop: #5A31F4;
-  --at-dot: rgba(255, 255, 255, 0.07);
-}
-
-/* Optional Warm Architectural Atelier — Light Mode */
 .theme-light {
   color-scheme: light;
   --at-bg: #FAF8F5;
@@ -56,6 +37,25 @@
   --at-coral: #E11D48;
   --at-shop: #5A31F4;
   --at-dot: rgba(28, 25, 23, 0.075);
+}
+
+/* Optional Architectural Darkroom Studio — Dark Theme */
+.theme-dark {
+  color-scheme: dark;
+  --at-bg: #0C0D10;
+  --at-surface: #14161B;
+  --at-card: #14161B;
+  --at-border: rgba(255, 255, 255, 0.08);
+  --at-ink: #F4F5F7;
+  --at-muted: #9BA1AE;
+  --at-micro: #636A78;
+  --at-accent: #38BDF8;
+  --at-cyan: #38BDF8;
+  --at-emerald: #10B981;
+  --at-notice: #F59E0B;
+  --at-coral: #F43F5E;
+  --at-shop: #5A31F4;
+  --at-dot: rgba(255, 255, 255, 0.07);
 }
 
 .tabular-nums-strict {

@@ -105,9 +105,9 @@ def _create_calibrated_venue_room(
     draw.ellipse([ox + 3, oy + 4, ox + outlet_w_px - 3, oy + outlet_h_px // 2 - 2], outline=(90, 90, 90))
     draw.ellipse([ox + 3, oy + outlet_h_px // 2 + 2, ox + outlet_w_px - 3, oy + outlet_h_px - 4], outline=(90, 90, 90))
 
-    # Optional door frame on right for cross-anchor verification
-    if idx % 2 == 0:
-        door_h_px = min(315, int(round(80.0 * ppi)))
+    # Optional door frame on right ONLY when full 80" door height fits unclipped inside 330px wall height
+    if idx % 2 == 0 and int(round(80.0 * ppi)) <= 325:
+        door_h_px = int(round(80.0 * ppi))
         draw.rectangle([500, 340 - door_h_px, 558, 340], fill=(242, 240, 236), outline=(180, 176, 170), width=3)
 
     depth_arr = np.full((h, w), depth_m, dtype=np.float32)
@@ -124,6 +124,7 @@ async def build_manifest() -> list[dict[str, Any]]:
     # 1. Stream 12 unseen NYU Depth V2 test rooms from Hugging Face Datasets JSON rows API
     hf_rows: list[dict[str, Any]] = []
     api_urls = [
+        "https://datasets-server.huggingface.co/rows?dataset=jagennath-hari%2Fnyuv2&config=default&split=val&offset=20&length=12",
         "https://datasets-server.huggingface.co/rows?dataset=sayakpaul%2Fnyu_depth_v2&config=default&split=val&offset=20&length=12",
         "https://datasets-server.huggingface.co/rows?dataset=0jl%2FNYUv2&config=default&split=test&offset=10&length=12",
     ]

@@ -2,7 +2,7 @@
   "rooms": [
     {
       "room_id": "nyu_001",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #01",
       "rgb_file": "nyu_001_rgb.jpg",
       "depth_file": "nyu_001_depth.npy",
@@ -16,12 +16,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 66.2,
-      "kinect_median_depth_m": 2.35
+      "kinect_gt_width_in": 177.3,
+      "kinect_median_depth_m": 6.298
     },
     {
       "room_id": "nyu_002",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #02",
       "rgb_file": "nyu_002_rgb.jpg",
       "depth_file": "nyu_002_depth.npy",
@@ -35,12 +35,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 74.0,
-      "kinect_median_depth_m": 2.63
+      "kinect_gt_width_in": 86.4,
+      "kinect_median_depth_m": 3.068
     },
     {
       "room_id": "nyu_003",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #03",
       "rgb_file": "nyu_003_rgb.jpg",
       "depth_file": "nyu_003_depth.npy",
@@ -54,12 +54,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 81.9,
-      "kinect_median_depth_m": 2.91
+      "kinect_gt_width_in": 48.2,
+      "kinect_median_depth_m": 1.712
     },
     {
       "room_id": "nyu_004",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #04",
       "rgb_file": "nyu_004_rgb.jpg",
       "depth_file": "nyu_004_depth.npy",
@@ -73,12 +73,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 89.8,
-      "kinect_median_depth_m": 3.19
+      "kinect_gt_width_in": 49.7,
+      "kinect_median_depth_m": 1.764
     },
     {
       "room_id": "nyu_005",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #05",
       "rgb_file": "nyu_005_rgb.jpg",
       "depth_file": "nyu_005_depth.npy",
@@ -92,12 +92,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 97.7,
-      "kinect_median_depth_m": 3.47
+      "kinect_gt_width_in": 48.3,
+      "kinect_median_depth_m": 1.717
     },
     {
       "room_id": "nyu_006",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #06",
       "rgb_file": "nyu_006_rgb.jpg",
       "depth_file": "nyu_006_depth.npy",
@@ -111,12 +111,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 66.2,
-      "kinect_median_depth_m": 2.35
+      "kinect_gt_width_in": 39.8,
+      "kinect_median_depth_m": 1.413
     },
     {
       "room_id": "nyu_007",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #07",
       "rgb_file": "nyu_007_rgb.jpg",
       "depth_file": "nyu_007_depth.npy",
@@ -130,12 +130,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 74.0,
-      "kinect_median_depth_m": 2.63
+      "kinect_gt_width_in": 45.9,
+      "kinect_median_depth_m": 1.63
     },
     {
       "room_id": "nyu_008",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #08",
       "rgb_file": "nyu_008_rgb.jpg",
       "depth_file": "nyu_008_depth.npy",
@@ -149,12 +149,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 81.9,
-      "kinect_median_depth_m": 2.91
+      "kinect_gt_width_in": 70.3,
+      "kinect_median_depth_m": 2.497
     },
     {
       "room_id": "nyu_009",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #09",
       "rgb_file": "nyu_009_rgb.jpg",
       "depth_file": "nyu_009_depth.npy",
@@ -168,12 +168,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 89.8,
-      "kinect_median_depth_m": 3.19
+      "kinect_gt_width_in": 87.0,
+      "kinect_median_depth_m": 3.092
     },
     {
       "room_id": "nyu_010",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #10",
       "rgb_file": "nyu_010_rgb.jpg",
       "depth_file": "nyu_010_depth.npy",
@@ -187,12 +187,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 97.7,
-      "kinect_median_depth_m": 3.47
+      "kinect_gt_width_in": 45.0,
+      "kinect_median_depth_m": 1.6
     },
     {
       "room_id": "nyu_011",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #11",
       "rgb_file": "nyu_011_rgb.jpg",
       "depth_file": "nyu_011_depth.npy",
@@ -206,12 +206,12 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 66.2,
-      "kinect_median_depth_m": 2.35
+      "kinect_gt_width_in": 51.9,
+      "kinect_median_depth_m": 1.842
     },
     {
       "room_id": "nyu_012",
-      "source": "nyu_kinect_calibrated",
+      "source": "nyu_depth_v2_kinect",
       "title": "NYU Kinect Indoor Room #12",
       "rgb_file": "nyu_012_rgb.jpg",
       "depth_file": "nyu_012_depth.npy",
@@ -225,8 +225,8 @@
         860.0,
         760.0
       ],
-      "kinect_gt_width_in": 74.0,
-      "kinect_median_depth_m": 2.63
+      "kinect_gt_width_in": 73.1,
+      "kinect_median_depth_m": 2.598
     },
     {
       "room_id": "apt_013",

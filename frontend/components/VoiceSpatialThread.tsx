@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -65,11 +65,43 @@ export function VoiceSpatialThread({
   const [input, setInput] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
+  const [activeSwapSkuId, setActiveSwapSkuId] = useState<string | null>(null);
+  const [brokenImgIds, setBrokenImgIds] = useState<Record<string, boolean>>({});
+  const [streamedText, setStreamedText] = useState<string>("");
+  const [streamedMsgId, setStreamedMsgId] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  useEffect(() => {
+    if (!isSwapping) setActiveSwapSkuId(null);
+  }, [isSwapping]);
+
+  // Smooth streaming text reveal for the latest assistant message (no voice TTS)
+  const latestAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  useEffect(() => {
+    if (!latestAssistant) return;
+    if (latestAssistant.id === streamedMsgId) return;
+    setStreamedMsgId(latestAssistant.id);
+    const full = latestAssistant.text;
+    let idx = 0;
+    setStreamedText("");
+    const timer = window.setInterval(() => {
+      idx = Math.min(full.length, idx + 4);
+      setStreamedText(full.slice(0, idx));
+      if (idx >= full.length) window.clearInterval(timer);
+    }, 14);
+    return () => window.clearInterval(timer);
+  }, [latestAssistant, streamedMsgId]);
 
   const latestWithAlts = [...messages]
     .reverse()
     .find((m) => m.alternatives && m.alternatives.length > 0);
+
+  // Auto-expand the thread whenever fresh alternatives arrive from clicking a pin or speaking
+  useEffect(() => {
+    if (latestWithAlts) {
+      setExpanded(true);
+    }
+  }, [latestWithAlts?.id]);
 
   const scopeChipLabel = pinnedItem
     ? `@${formatZoneLabel(pinnedItem.zone_id)} · ${pinnedItem.category}`
@@ -175,7 +207,16 @@ export function VoiceSpatialThread({
                       : "text-at-ink"
                   }`}
                 >
-                  {m.role === "user" ? `You: "${m.text}"` : m.text}
+                  {m.role === "user" ? (
+                    <span>
+                      <strong className="text-at-ink">You:</strong> &ldquo;{m.text}&rdquo;
+                    </span>
+                  ) : (
+                    <span className="leading-relaxed">
+                      <strong className="text-at-cyan font-mono text-[11px] mr-1.5">DATUM</strong>
+                      {m.id === streamedMsgId ? streamedText : m.text}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -193,12 +234,21 @@ export function VoiceSpatialThread({
                   }`}
                 >
                   <div className="flex gap-2.5">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={alt.image_url}
-                      alt={alt.title}
-                      className="h-12 w-12 rounded-lg object-cover border border-at-border shrink-0"
-                    />
+                    {alt.image_url && !brokenImgIds[alt.sku_id] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={alt.image_url}
+                        alt={alt.title}
+                        onError={() =>
+                          setBrokenImgIds((prev) => ({ ...prev, [alt.sku_id]: true }))
+                        }
+                        className="h-12 w-12 rounded-lg object-cover border border-at-border shrink-0 bg-at-card"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-lg border border-at-border shrink-0 bg-at-card flex items-center justify-center text-[10px] font-mono text-at-muted">
+                        SKU
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <p className="text-[11px] font-semibold text-at-ink line-clamp-2 leading-tight">
                         {alt.title}
@@ -238,10 +288,15 @@ export function VoiceSpatialThread({
                       <button
                         type="button"
                         disabled={isSwapping}
-                        onClick={() => onSelectAlternative(alt)}
+                        onClick={() => {
+                          setActiveSwapSkuId(alt.sku_id);
+                          onSelectAlternative(alt);
+                        }}
                         className="px-2.5 py-1 rounded-full bg-at-cyan hover:opacity-95 text-[#0C0D10] text-[10px] font-semibold disabled:opacity-50 cursor-pointer"
                       >
-                        {isSwapping ? "Swapping…" : "Surgical Swap"}
+                        {isSwapping && activeSwapSkuId === alt.sku_id
+                          ? "Swapping…"
+                          : "Surgical Swap"}
                       </button>
                     </div>
                   )}

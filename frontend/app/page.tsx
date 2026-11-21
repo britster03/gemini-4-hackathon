@@ -32,9 +32,10 @@ import { GlassBoxRail } from "@/components/GlassBoxRail";
 import { ShopifyCommerceRail } from "@/components/ShopifyCommerceRail";
 import { VoiceSpatialThread } from "@/components/VoiceSpatialThread";
 import { BenchmarkDrawer } from "@/components/BenchmarkDrawer";
+import { DatumLogo, PoweredByBar } from "@/components/BrandMarks";
 
 export default function DatumStudioPage() {
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
   const [appPhase, setAppPhase] = useState<"capture" | "studio">("capture");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
@@ -148,14 +149,28 @@ export default function DatumStudioPage() {
     setElapsedSec(0);
     setIsStreaming(true);
 
-    const isPreset = Boolean(payload.preset);
     setActivePresetId(payload.preset?.id ?? null);
+
+    let filesToUpload: File[] = payload.images.map((i) => i.file);
+    if (filesToUpload.length === 0 && payload.preset?.room_image_url) {
+      try {
+        const imgResp = await fetch(payload.preset.room_image_url);
+        const blob = await imgResp.blob();
+        filesToUpload = [
+          new File([blob], `${payload.preset.id}.jpg`, {
+            type: blob.type || "image/jpeg",
+          }),
+        ];
+      } catch {
+        filesToUpload = [];
+      }
+    }
 
     if (payload.preset) {
       setAngleTabs([
         {
           id: "angle-1",
-          label: "Main View",
+          label: payload.preset.title,
           imageUrl: payload.preset.room_image_url,
         },
       ]);
@@ -172,11 +187,11 @@ export default function DatumStudioPage() {
 
     setAppPhase("studio");
 
-    const runWithMock = DEFAULT_USE_MOCK || isPreset;
+    const runWithMock = DEFAULT_USE_MOCK || filesToUpload.length === 0;
 
     await startSessionStream(
       {
-        images: payload.images.map((i) => i.file),
+        images: filesToUpload,
         exifFocalMm:
           payload.images[0]?.exifFocalMm ?? payload.preset?.exif_focal_mm ?? null,
         prompt: payload.prompt,
@@ -249,7 +264,7 @@ export default function DatumStudioPage() {
       zoneId: zone.zone_id,
       overrideWidthIn: newWidthIn,
       overrideDepthIn: zone.depth_in,
-      useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+      useMock: DEFAULT_USE_MOCK || !sessionId || sessionId.startsWith("mock_"),
       currentItems: cartData?.items,
     });
 
@@ -297,7 +312,7 @@ export default function DatumStudioPage() {
         targetItemId: item.item_id,
         newSkuId: item.sku_id,
         variantId: item.selected_variant_id,
-        useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+        useMock: DEFAULT_USE_MOCK || !sessionId || sessionId.startsWith("mock_"),
         currentItems: cartData?.items,
         nextVersionNumber: versions.length + 1,
         mockPresetId: activePresetId,
@@ -327,7 +342,11 @@ export default function DatumStudioPage() {
     }
   };
 
-  const handleSendUtterance = async (utterance: string) => {
+  const handleSendUtterance = async (
+    utterance: string,
+    explicitPinItem?: VerifiedCartItem | null
+  ) => {
+    const activePin = explicitPinItem !== undefined ? explicitPinItem : pinnedItem;
     setIsSendingThread(true);
     setMessages((prev) => [
       ...prev,
@@ -335,8 +354,8 @@ export default function DatumStudioPage() {
         id: `u-${Date.now()}`,
         role: "user",
         text: utterance,
-        pinned_chip: pinnedItem
-          ? `@${pinnedItem.zone_id} · ${pinnedItem.category}`
+        pinned_chip: activePin
+          ? `@${activePin.zone_id} · ${activePin.category}`
           : pinnedZone
           ? `@${pinnedZone.zone_id}`
           : null,
@@ -348,9 +367,9 @@ export default function DatumStudioPage() {
       const res = await sendThreadUtterance({
         sessionId: sessionId || "mock",
         utterance,
-        pinnedZoneId: pinnedItem?.zone_id ?? pinnedZone?.zone_id ?? null,
-        pinnedItemId: pinnedItem?.item_id ?? null,
-        useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+        pinnedZoneId: activePin?.zone_id ?? pinnedZone?.zone_id ?? null,
+        pinnedItemId: activePin?.item_id ?? null,
+        useMock: DEFAULT_USE_MOCK || !sessionId || sessionId.startsWith("mock_"),
       });
 
       if (res.executed_swap?.allowed && res.executed_swap.new_version) {
@@ -401,7 +420,7 @@ export default function DatumStudioPage() {
         zoneId: alt.zone_id,
         targetItemId: alt.target_item_id,
         newSkuId: alt.sku_id,
-        useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+        useMock: DEFAULT_USE_MOCK || !sessionId || sessionId.startsWith("mock_"),
         currentItems: cartData?.items,
         nextVersionNumber: versions.length + 1,
         mockPresetId: activePresetId,
@@ -463,9 +482,10 @@ export default function DatumStudioPage() {
   ) => {
     setPinnedZone(null);
     setPinnedItem(item);
-    if (promptOverride) {
-      handleSendUtterance(promptOverride);
-    }
+    handleSendUtterance(
+      promptOverride || `Show alternatives for ${item.category}`,
+      item
+    );
   };
 
   const activeAngleUrl =
@@ -480,76 +500,102 @@ export default function DatumStudioPage() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-at-bg text-at-ink overflow-hidden transition-colors duration-200">
-      {/* Top 48px Utility Bar (Section 03.A) */}
-      <header className="h-12 px-4 border-b border-at-border bg-at-card flex items-center justify-between gap-3 shrink-0 z-40">
-        {/* Left: Datum Wordmark + New Space */}
-        <div className="flex items-center gap-3">
+      {/* Top 56px Studio Navigation Bar */}
+      <header className="h-14 px-5 border-b border-at-border/80 bg-at-bg/95 backdrop-blur-md grid grid-cols-[1fr_auto_1fr] items-center gap-4 shrink-0 z-40">
+        {/* Left: Datum Brand Lockup + Subtle Ghost New Space Action */}
+        <div className="flex items-center gap-3 justify-self-start">
           <button
             type="button"
             onClick={resetToCapture}
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex items-center gap-2.5 group cursor-pointer"
           >
-            <span className="h-7 w-7 rounded-lg bg-at-cyan/15 border border-at-cyan/50 flex items-center justify-center text-at-cyan">
-              <Compass className="h-4 w-4" />
-            </span>
-            <span className="text-sm font-semibold tracking-[-0.02em] text-at-ink">
+            <DatumLogo className="h-7 w-7 shrink-0 transition-transform duration-200 group-hover:scale-[1.03]" />
+            <span className="text-[15px] font-semibold tracking-[-0.03em] text-at-ink">
               Datum
             </span>
           </button>
 
           {appPhase === "studio" && (
-            <button
-              type="button"
-              onClick={resetToCapture}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-bg border border-at-border hover:border-at-cyan text-[11px] font-medium text-at-muted hover:text-at-ink cursor-pointer transition-colors"
-            >
-              <RotateCcw className="h-3 w-3" />
-              New Space
-            </button>
+            <>
+              <span className="h-4 w-px bg-at-border/80" />
+              <button
+                type="button"
+                onClick={resetToCapture}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-at-muted hover:text-at-ink hover:bg-at-card cursor-pointer transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>New Space</span>
+              </button>
+            </>
           )}
         </div>
 
-        {/* Center: Studio Space Scope Chip (hidden on capture screen) */}
-        <div className="hidden md:flex items-center gap-2.5">
-          {appPhase === "studio" && (
-            <span className="px-2.5 py-1 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono text-at-muted">
-              {scaleData?.scope_label ?? "Calibrating Space…"}
-            </span>
-          )}
+        {/* Center: Mathematically Centered Sponsor Lockup */}
+        <div className="hidden md:flex items-center justify-center">
+          <PoweredByBar compact />
         </div>
 
-        {/* Right: Budget Progress + Light/Dark Toggle */}
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono tabular-nums-strict">
-            <span className="text-at-muted">Budget</span>
-            <span
-              className={
-                (cartData?.total_usd ?? 0) > budgetUsd
-                  ? "text-at-coral font-semibold"
-                  : "text-at-emerald font-semibold"
-              }
-            >
-              ${(cartData?.total_usd ?? 0).toFixed(2)}
-            </span>
-            <span className="text-at-muted">/ ${budgetUsd.toFixed(2)}</span>
-          </div>
+        {/* Right: Refined Budget Meter Pill + Circular Theme Toggle */}
+        <div className="flex items-center gap-2.5 justify-self-end">
+          {(() => {
+            const spent = cartData?.total_usd ?? 0;
+            const overBudget = spent > budgetUsd;
+            const pct = budgetUsd > 0 ? Math.min(100, Math.round((spent / budgetUsd) * 100)) : 0;
+            return (
+              <div className="hidden sm:flex flex-col justify-center px-3 py-1 rounded-full bg-at-card/80 border border-at-border/80 min-w-[152px]">
+                <div className="flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums-strict leading-tight">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        overBudget
+                          ? "bg-at-coral"
+                          : spent > 0
+                          ? "bg-at-emerald"
+                          : "bg-at-muted/50"
+                      }`}
+                    />
+                    <span className="text-[10px] font-sans uppercase tracking-wider text-at-muted">
+                      Budget
+                    </span>
+                  </span>
+                  <span>
+                    <span
+                      className={
+                        overBudget
+                          ? "text-at-coral font-semibold"
+                          : spent > 0
+                          ? "text-at-ink font-semibold"
+                          : "text-at-muted font-medium"
+                      }
+                    >
+                      ${spent.toFixed(2)}
+                    </span>
+                    <span className="text-at-muted/70"> / ${budgetUsd.toFixed(0)}</span>
+                  </span>
+                </div>
+                <div className="mt-1 h-[2px] w-full rounded-full bg-at-border/60 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      overBudget ? "bg-at-coral" : "bg-at-emerald"
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
 
           <button
             type="button"
             onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-            className="px-2.5 py-1.5 rounded-lg bg-at-bg border border-at-border hover:border-at-cyan text-xs font-medium text-at-ink inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+            className="h-8 w-8 rounded-full bg-at-card/80 border border-at-border/80 hover:border-at-cyan/70 text-at-muted hover:text-at-ink inline-flex items-center justify-center cursor-pointer transition-colors"
+            title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
             aria-label="Toggle Dark or Light Mode"
           >
             {theme === "dark" ? (
-              <>
-                <Moon className="h-3.5 w-3.5 text-at-cyan" />
-                <span className="hidden sm:inline">Dark</span>
-              </>
+              <Sun className="h-3.5 w-3.5 text-at-ink/80" />
             ) : (
-              <>
-                <Sun className="h-3.5 w-3.5 text-at-accent" />
-                <span className="hidden sm:inline">Light</span>
-              </>
+              <Moon className="h-3.5 w-3.5 text-at-ink/80" />
             )}
           </button>
         </div>
@@ -586,8 +632,7 @@ export default function DatumStudioPage() {
               hoveredItemId={hoveredItemId}
               onHoverItem={setHoveredItemId}
               onPinItem={(item) => {
-                setPinnedZone(null);
-                setPinnedItem(item);
+                handleRequestSwapForItem(item);
               }}
               onSelectZone={(zone) => {
                 setPinnedItem(null);
@@ -595,6 +640,7 @@ export default function DatumStudioPage() {
               }}
               onOverrideZoneWidth={handleOverrideZoneWidth}
               isRendering={isStreaming}
+              isSwapping={isSwapping}
               isRepairing={isRepairing}
               angleTabs={angleTabs}
               activeAngleId={activeAngleId}
@@ -617,8 +663,23 @@ export default function DatumStudioPage() {
           </section>
 
           <aside className="w-full lg:w-[36%] h-[45%] lg:h-full flex flex-col min-h-0 bg-at-card">
+            {/* Live 4-Stage Glass-Box Verification Strip (Zero Black Box!) */}
+            <GlassBoxRail
+              scaleData={scaleData}
+              catalogData={catalogData}
+              hookData={hookData}
+              cartData={cartData}
+              decisionsQA={activeVersion?.decisions_qa ?? null}
+              isStreaming={isStreaming}
+              elapsedSec={elapsedSec}
+            />
+
             <ShopifyCommerceRail
               cartData={cartData}
+              scaleData={scaleData}
+              catalogData={catalogData}
+              hookData={hookData}
+              elapsedSec={elapsedSec}
               budgetUsd={budgetUsd}
               isLoading={isStreaming}
               isSwapping={isSwapping}
@@ -627,6 +688,7 @@ export default function DatumStudioPage() {
               onHoverItem={setHoveredItemId}
               onSelectVariant={handleSelectVariant}
               onRerenderVariant={handleRerenderVariant}
+              onSelectAlternative={handleSelectAlternative}
               onRequestSwapForItem={handleRequestSwapForItem}
             />
           </aside>

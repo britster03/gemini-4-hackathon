@@ -120,9 +120,9 @@ def parse_dimensions_labeled_deterministic(title: str, description_plain: str) -
     height_in: float | None = None
     matched_snippets: list[str] = []
 
-    # 1. Explicit axis-suffixed tokens (`40"W`, `24"D`, `29.5"H`)
+    # 1. Explicit axis-suffixed tokens (`40"W`, `24"D`, `29.5"H`) — require explicit inch unit so '3D/4D armrests' is never read as 3.0"D!
     axis_tokens = re.findall(
-        r'(\d{1,3}(?:\.\d+)?)\s*(?:"|in\.?|inch(?:es)?)?\s*([WDHLwdhl])\b',
+        r'(\d{1,3}(?:\.\d+)?)\s*(?:"|\'\'|in\.?\b|inch(?:es)?\b)\s*([WDHLwdhl])\b',
         blob,
     )
     axis_map: dict[str, float] = {}
@@ -161,9 +161,10 @@ def parse_dimensions_labeled_deterministic(title: str, description_plain: str) -
     if height_in is None and h_word:
         height_in = float(h_word.group(1) or h_word.group(2))
 
-    # 2. Title span before category noun (`55 Inch Computer Desk`, `40" Standing Desk`), rejecting H/Height!
+    # 2. Title span before horizontal category noun (`55 Inch Computer Desk`, `40" Standing Desk`),
+    #    explicitly excluding vertical bookcases/shelves where title inches (`55" Tree Bookshelf`) denote height!
     title_w = re.search(
-        r'\b(\d{2,3}(?:\.\d+)?)\s*(?:"|-inch|\s+inch|\s+in\.?)\s+(?!h\b|high\b|height\b|tall\b)(?:standing\s+|computer\s+|writing\s+|home\s+|office\s+|executive\s+|modern\s+|slim\s+|compact\s+|l-shaped\s+|gaming\s+)*(?:desk|table|sofa|couch|loveseat|bookcase|bookshelf|shelf|console)',
+        r'\b(\d{2,3}(?:\.\d+)?)\s*(?:"|-inch|\s+inch|\s+in\.?)\s+(?!h\b|high\b|height\b|tall\b)(?:standing\s+|computer\s+|writing\s+|home\s+|office\s+|executive\s+|modern\s+|slim\s+|compact\s+|l-shaped\s+|gaming\s+)*(?:desk|table|sofa|couch|loveseat|console)',
         title,
         flags=re.IGNORECASE,
     )
@@ -440,17 +441,28 @@ class ShopMCPClient:
             if not title:
                 continue
 
-            # Primary product image from `media`
-            img_url = ""
-            media_list = prod.get("media") or []
-            if isinstance(media_list, list) and media_list:
-                m0 = media_list[0]
-                if isinstance(m0, dict):
-                    img_url = str(
-                        m0.get("url")
-                        or (m0.get("preview") or {}).get("url")
-                        or ""
-                    )
+            # Extract ALL product gallery media URLs (`media[]` + variant/swatch images)
+            all_images: list[str] = []
+            seen_urls: set[str] = set()
+
+            def _push_img(u: Any) -> None:
+                if isinstance(u, str) and u.startswith("http") and u not in seen_urls:
+                    seen_urls.add(u)
+                    all_images.append(u)
+
+            media_list = prod.get("media") or prod.get("images") or []
+            if isinstance(media_list, list):
+                for m_item in media_list:
+                    if isinstance(m_item, str):
+                        _push_img(m_item)
+                    elif isinstance(m_item, dict):
+                        _push_img(
+                            m_item.get("url")
+                            or (m_item.get("image") or {}).get("url")
+                            or (m_item.get("preview") or {}).get("url")
+                        )
+
+            img_url = all_images[0] if all_images else ""
 
             # Map swatch images by option value label if present
             swatch_by_label: dict[str, str] = {}
@@ -462,19 +474,22 @@ class ShopMCPClient:
                             sw_url = (val_obj.get("swatch") or {}).get("image_url")
                             if lbl and isinstance(sw_url, str):
                                 swatch_by_label[lbl] = sw_url
+                                _push_img(sw_url)
 
             desc_plain = extract_plain_description(prod.get("description"))
             # Also fold top_features from UCP metadata into description_plain for dimension parsing!
-            meta_features = (prod.get("metadata") or {}).get("top_features") or []
-            if isinstance(meta_features, list) and meta_features:
-                desc_plain = f"{desc_plain} | Features: {'; '.join(str(f) for f in meta_features)}"
+            raw_features = (prod.get("metadata") or {}).get("top_features") or []
+            top_features = [str(f).strip() for f in raw_features if str(f).strip()] if isinstance(raw_features, list) else []
+            if top_features:
+                desc_plain = f"{desc_plain} | Features: {'; '.join(top_features)}"
 
             price_cents, price_usd = normalize_price_to_cents_and_usd(prod.get("price_range"))
 
             variants_out: list[ProductVariant] = []
             merchant_name = "Shopify Merchant"
             shop_domain = ""
-            product_url = ""
+            product_url = str(prod.get("url") or prod.get("onlineStoreUrl") or "")
+            merchant_sku: str | None = str(prod.get("sku")) if prod.get("sku") else None
 
             for v in prod.get("variants") or []:
                 if not isinstance(v, dict):
@@ -490,9 +505,29 @@ class ShopMCPClient:
                     else bool(v.get("available", True))
                 )
 
+                v_sku_code = str(v.get("sku")).strip() if v.get("sku") else None
+                if v_sku_code and not merchant_sku:
+                    merchant_sku = v_sku_code
+
+                v_imgs: list[str] = []
+                for vk in ("image", "featuredImage"):
+                    vimg_obj = v.get(vk)
+                    if isinstance(vimg_obj, str) and vimg_obj.startswith("http"):
+                        v_imgs.append(vimg_obj)
+                        _push_img(vimg_obj)
+                    elif isinstance(vimg_obj, dict) and isinstance(vimg_obj.get("url"), str):
+                        v_imgs.append(vimg_obj["url"])
+                        _push_img(vimg_obj["url"])
+                for vm in v.get("media") or []:
+                    if isinstance(vm, dict):
+                        vmu = vm.get("url") or (vm.get("image") or {}).get("url") or (vm.get("preview") or {}).get("url")
+                        if isinstance(vmu, str) and vmu.startswith("http"):
+                            v_imgs.append(vmu)
+                            _push_img(vmu)
+
                 opt_map: dict[str, str] = {}
                 v_label_parts: list[str] = []
-                v_swatch_img: str | None = None
+                v_swatch_img: str | None = v_imgs[0] if v_imgs else None
                 for vo in v.get("options") or []:
                     if isinstance(vo, dict) and "name" in vo and "label" in vo:
                         oname, olabel = str(vo["name"]), str(vo["label"])
@@ -500,6 +535,8 @@ class ShopMCPClient:
                         v_label_parts.append(olabel)
                         if olabel in swatch_by_label:
                             v_swatch_img = swatch_by_label[olabel]
+                            if swatch_by_label[olabel] not in v_imgs:
+                                v_imgs.append(swatch_by_label[olabel])
 
                 seller = v.get("seller") or {}
                 if isinstance(seller, dict):
@@ -517,11 +554,13 @@ class ShopMCPClient:
                         variant_id=vgid.rsplit("/", 1)[-1],
                         gid=vgid,
                         title=v_title[:48],
+                        sku_code=v_sku_code,
                         option_values=opt_map,
                         price_cents=vcents or price_cents,
                         price_usd=vusd or price_usd,
                         available=v_avail,
                         image_url=v_swatch_img or img_url,
+                        gallery_images=v_imgs,
                     )
                 )
 
@@ -532,6 +571,12 @@ class ShopMCPClient:
             chosen_v = avail_variants[0]
             if chosen_v.price_cents <= 0:
                 continue
+
+            if not img_url and all_images:
+                img_url = all_images[0]
+            primary_img = chosen_v.image_url or img_url
+            if primary_img and primary_img not in seen_urls:
+                all_images.insert(0, primary_img)
 
             if not shop_domain and product_url.startswith("http"):
                 shop_domain = urlparse(product_url).netloc
@@ -544,6 +589,7 @@ class ShopMCPClient:
                 ShopifySKU(
                     sku_id=f"{category.replace(' ', '_')}_{sku_short}_{idx}",
                     gid=gid,
+                    merchant_sku=chosen_v.sku_code or merchant_sku,
                     selected_variant_id=chosen_v.variant_id,
                     selected_variant_gid=chosen_v.gid,
                     title=title,
@@ -552,9 +598,11 @@ class ShopMCPClient:
                     shop_domain=shop_domain,
                     price_cents=chosen_v.price_cents,
                     price_usd=chosen_v.price_usd,
-                    image_url=chosen_v.image_url or img_url,
+                    image_url=primary_img,
+                    images=all_images,
                     product_url=product_url or None,
                     description_plain=desc_plain,
+                    top_features=top_features,
                     in_stock=True,
                     verified_at=now_iso,
                     variants=variants_out,
@@ -565,7 +613,7 @@ class ShopMCPClient:
     async def enrich_product_variants(
         self, sku: ShopifySKU
     ) -> tuple[ShopifySKU, MCPCallTrace]:
-        """Call live `get_product` on `https://mcp.shop.com/` to inspect full swatches & freshness."""
+        """Call live `get_product` on `https://mcp.shop.com/` to inspect full gallery media, swatches & freshness."""
         call_id = f"mcp_{uuid.uuid4().hex[:6]}"
         args = {
             "catalog": {
@@ -589,6 +637,29 @@ class ShopMCPClient:
                         enriched.variants = fresh.variants
                         enriched.merchant_name = fresh.merchant_name or enriched.merchant_name
                         enriched.shop_domain = fresh.shop_domain or enriched.shop_domain
+                        enriched.product_url = fresh.product_url or enriched.product_url
+                        enriched.merchant_sku = fresh.merchant_sku or enriched.merchant_sku
+                        if fresh.top_features:
+                            enriched.top_features = fresh.top_features
+                        if len(fresh.description_plain) > len(enriched.description_plain):
+                            enriched.description_plain = fresh.description_plain
+                        # Merge ALL full-resolution product gallery photos from `get_product`
+                        merged_imgs: list[str] = []
+                        for u in [enriched.image_url] + fresh.images + enriched.images:
+                            if u and u.startswith("http") and u not in merged_imgs:
+                                merged_imgs.append(u)
+                        enriched.images = merged_imgs
+                        if merged_imgs and not enriched.image_url:
+                            enriched.image_url = merged_imgs[0]
+
+                        # Re-check deterministic specs if full `get_product` description exposed dimensions
+                        if enriched.dimensions.dimensions_unverified and fresh.description_plain:
+                            reparsed = parse_dimensions_labeled_deterministic(
+                                enriched.title, fresh.description_plain
+                            )
+                            if not reparsed.dimensions_unverified:
+                                enriched.dimensions = reparsed
+
                         # Also synthesize option swatches if `options` has more colors than `variants` returned
                         existing_labels = {v.title for v in enriched.variants}
                         for opt in prod.get("options") or []:
@@ -601,6 +672,8 @@ class ShopMCPClient:
                                     if not lbl or lbl in existing_labels or not val_obj.get("available", True):
                                         continue
                                     sw_img = (val_obj.get("swatch") or {}).get("image_url") or enriched.image_url
+                                    if sw_img and sw_img.startswith("http") and sw_img not in enriched.images:
+                                        enriched.images.append(sw_img)
                                     enriched.variants.append(
                                         ProductVariant(
                                             variant_id=f"{enriched.selected_variant_id}_{lbl.lower()}",
@@ -615,6 +688,9 @@ class ShopMCPClient:
                                     )
                                     existing_labels.add(lbl)
 
+                if enriched.image_url and enriched.image_url not in enriched.images:
+                    enriched.images.insert(0, enriched.image_url)
+
                 trace = MCPCallTrace(
                     call_id=call_id,
                     tool_name="get_product",
@@ -623,7 +699,10 @@ class ShopMCPClient:
                     status="ok",
                     gids_returned=[enriched.gid, enriched.selected_variant_gid],
                     latency_ms=latency_ms,
-                    raw_preview={"variants_loaded": len(enriched.variants)},
+                    raw_preview={
+                        "variants_loaded": len(enriched.variants),
+                        "gallery_images_loaded": len(enriched.images),
+                    },
                 )
                 return enriched, trace
             except Exception as exc:

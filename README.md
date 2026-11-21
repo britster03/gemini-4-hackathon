@@ -1,6 +1,6 @@
-# ClearBuy (Datum) — Verified Spatial Commerce Compiler
+# ClearBuy (Datum / Caliper) — Verified Spatial Commerce Compiler
 
-Gemini 4 NYC Hackathon · Verified Spatial Commerce Compiler (`Next.js 15` + `FastAPI SSE` + `Google GenAI SDK` + `Shopify Shop MCP / UCP`).
+Gemini 4 NYC Hackathon · Verified Spatial Commerce Compiler (`Next.js 15` + `FastAPI SSE` + `Google GenAI SDK` + `Managed Agents hooks.json` + `Shopify Shop MCP / UCP`).
 
 ## Quickstart
 
@@ -8,11 +8,11 @@ Gemini 4 NYC Hackathon · Verified Spatial Commerce Compiler (`Next.js 15` + `Fa
    ```bash
    cp .env.example .env.local
    ```
-2. Sync Python 3.12 virtual environment via `uv`:
+2. Sync Python 3.12 virtual environment via `uv` (add `--extra depth` for local `Depth-Anything-V2-Metric-Indoor-Small`):
    ```bash
-   uv sync --extra dev --python 3.12
+   uv sync --extra dev --extra depth --python 3.12
    ```
-3. Run unit & contract tests (`4/4` pass in `0.26s`):
+3. Run full Engineer A + Engineer B test suite:
    ```bash
    uv run pytest tests/ -v
    ```
@@ -23,34 +23,13 @@ Gemini 4 NYC Hackathon · Verified Spatial Commerce Compiler (`Next.js 15` + `Fa
 
 ---
 
-## Summary of Changes & Plug-In Guide for Engineer A
+## Connected Architecture (Engineer A + Engineer B Integrated)
 
-Engineer B's entire backend, live Shopify MCP/UCP engine, Nano Banana 2.1 renderer, Decisions API QA gate, and 14-room NYU Depth V2 benchmark are now merged into `main`.
-
-`backend/adapters.py` already includes **automatic plug-in hooks** for Engineer A's files — as soon as you drop your files in, the FastAPI pipeline (`POST /api/session/start`, `POST /swap`, `PATCH /zone`, and `eval/run_eval.py`) automatically calls your code instead of the built-in fallback:
-
-1. **Scale Engine (`backend/scale_engine.py` or `scale_engine.py`)**:
-   - Expose `calibrate_space(session_id, image_bytes, prompt, scope="auto", exif_focal_mm=None)` (sync or `async`).
-   - Return either a `ScaleReadyEvent` instance (from `backend.schemas`) or a `dict` matching `ScaleReadyEvent.model_fields` (`detected_scope`, `calibration_layer`, `calibration_summary`, `primary_anchor`, `anchors_detected`, `cross_anchor_skew_pct`, `zones`, `protected_anchors`).
-2. **Guardrail Solver (`agents/verify_bundle.py` & `agents/hooks.json`)**:
-   - `backend/adapters.py` (`verify_bundle_deterministic`) automatically invokes `agents/verify_bundle.py` via stdin JSON:
-     ```json
-     {
-       "budget_usd": 450.0,
-       "zones": [...],
-       "items": [...]
-     }
-     ```
-   - Print JSON to stdout: `{"decision": "allow" | "deny", "reason": "..."}`.
-3. **Shared Config & Gemini Clients (`backend/config.py`)**:
-   - Import `get_genai_client()`, `get_model_neon()`, and `get_model_hydrogen()` from `backend.config` so all modules share `.env.local` and `google-genai==3.6.1`.
-
----
-
-## Frozen API Endpoints (`backend/main.py`)
-- `POST /api/session/start` — Multipart upload (`images`, `prompt`, `budget_usd`, `exif_focal_mm`, `scope`) streaming SSE events (`scale_ready`, `catalog_ready`, `hook_event`, `cart_ready`, `render_ready`).
-- `GET /api/session/{id}/stream` — Replay/live SSE subscription (`EventSource` compatible).
-- `POST /api/session/{id}/thread` — Conversational voice/text router (`gemini-4-hydrogen`) returning pre-vetted Shopify alternatives with deltas or `hooks.json` block cards.
-- `POST /api/session/{id}/swap` — Hard `verify_bundle` gate (`422` on violation) + stateful `gemini-nano-banana-2.1` surgical swap + `gemini-decision-1` QA + UCP `update_checkout`.
-- `PATCH /api/session/{id}/zone` — CAD caliper drag override with instant fit recalculation.
-- `GET /api/benchmark` — 14-room NYU Depth V2 Kinect + Gemini 4 thinking-level ablation metrics.
+- **Engineer A (`backend/scale_engine.py`, `backend/anchor_standards.json`, `backend/spec_parser.py`, `backend/managed_agent.py`, `.agents/hooks.json`, `.agents/verify_bundle.py`)**:
+  - **Universal Two-Layer Scale Engine**: Layer 1 `gemini-4-neon` Two-Tier Reference Anchors + Weighted Cross-Anchor Skew Check (`>15%` foreshortening flag) + 3D Depth-Ratio Plane Correction (`Z_zone / Z_anchor`), seamlessly paired with Layer 2 `Depth-Anything-V2-Metric-Indoor-Small-hf` + rotation-invariant EXIF pinhole geometry (`5.34"` MAE on unseen NYU Kinect rooms; `0.1"` on clean wall-outlet nooks).
+  - **Universal Spatial Guardrail (`.agents/hooks.json` + `verify_bundle.py`)**: Deterministic 2D spatial topology (`floor_anchor`, `underlay` rugs, `paired_tuck` seating/tables, `surface_top` lamps/mats, `wall_mount` art/mirrors), `ProtectedAnchor` preservation, SHA-256 constraint tamper protection, and strict minor-unit cents->USD budget enforcement inside Google's `antigravity-preview-09-2026` Managed Agents sandbox and FastAPI.
+  - **Structured `W×D×H` Spec Parser (`spec_parser.py`)**: `gemini-4-hydrogen` batch spec extraction + `gemini-decision-1` Catalog Gate + voice/video helpers.
+- **Engineer B (`backend/main.py`, `backend/adapters.py`, `backend/shop_mcp.py`, `backend/renderer.py`, `backend/visual_qa.py`, `backend/thread_router.py`, `eval/`)**:
+  - **FastAPI SSE Orchestrator** (`POST /api/session/start`, `GET /api/session/{id}/stream`, `POST /thread`, `POST /swap`, `PATCH /zone`, `GET /api/benchmark`).
+  - **Live Shopify Shop MCP (`2026-07-28`) & UCP (`2026-08-25`)** (`search_catalog`, `get_product` variants, per-merchant `create_checkout` / `update_checkout` with Shop Pay `continue_url`).
+  - **Exact-SKU Render & Pixel Lie-Detector** (`gemini-nano-banana-2.1` + `gemini-decision-1` 4-rubric Visual QA + 1× auto-repair) & 14-room NYU Depth V2 Kinect + Gemini 4 ablation benchmark.

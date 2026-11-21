@@ -5,6 +5,7 @@ learning/
 .env
 .env.local
 .env.*
+.env.local
 !.env.example
 *.pem
 *.key
@@ -32,7 +33,9 @@ __pycache__/
 dist/
 build/
 
-# Runtime Session Artifacts & Raw Eval Media Cache
+# Runtime Session Artifacts, Hook Traces & Raw Eval Media Cache
+hook_trace.jsonl
+/tmp_uploads/
 backend/.sessions/
 eval/data/
 eval/tmp/

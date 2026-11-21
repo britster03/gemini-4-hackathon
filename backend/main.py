@@ -16,6 +16,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import time
 import uuid
 from io import BytesIO
@@ -610,6 +611,31 @@ def _lookup_candidate_sku(session: SpatialSession, sku_id: str) -> ShopifySKU | 
     return None
 
 
+def _apply_variant_dimensions(sku: ShopifySKU, variant_title: str | None) -> None:
+    """Parse W x D x H dimensions from a selected Shopify variant label (e.g. '39.4\" x 18.9\" x 29.5\"')."""
+    if not variant_title:
+        return
+    m = re.search(
+        r"(\d+(?:\.\d+)?)\s*(?:\"|in|inch|inches)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:\"|in|inch|inches)?(?:\s*[x×]\s*(\d+(?:\.\d+)?))?",
+        variant_title,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return
+    w = float(m.group(1))
+    d = float(m.group(2))
+    h = float(m.group(3)) if m.group(3) else sku.dimensions.height_in
+    # Sanity-check inches range (6" to 140")
+    if 6.0 <= w <= 140.0:
+        sku.dimensions.width_in = round(w, 1)
+        sku.dimensions.verified = True
+        sku.dimensions.raw_text = variant_title
+    if 6.0 <= d <= 140.0:
+        sku.dimensions.depth_in = round(d, 1)
+    if h is not None and 4.0 <= h <= 120.0:
+        sku.dimensions.height_in = round(h, 1)
+
+
 async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> SwapResponse:
     """Core `hooks.json` -> stateful Nano Banana surgical swap -> Decisions QA -> UCP update flow."""
     zones = session.scale.zones if session.scale else []
@@ -639,6 +665,7 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             new_sku.price_usd = matched_v.price_usd
             if matched_v.image_url:
                 new_sku.image_url = matched_v.image_url
+            _apply_variant_dimensions(new_sku, matched_v.title)
 
     proposed_cart = [
         (new_sku if it.sku_id == target_item.sku_id else it)
@@ -682,6 +709,7 @@ async def execute_session_swap(session: SpatialSession, req: SwapRequest) -> Swa
             new_sku_enriched.price_usd = mv.price_usd
             if mv.image_url:
                 new_sku_enriched.image_url = mv.image_url
+            _apply_variant_dimensions(new_sku_enriched, mv.title)
 
     updated_cart = annotate_item_fit_badges(
         zones,

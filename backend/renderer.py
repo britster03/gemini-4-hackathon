@@ -258,13 +258,21 @@ async def render_initial_bundle(
             if item.dimensions.width_in
             else "standard true-to-life proportions"
         )
+        scale_ratio_txt = ""
+        if z and item.dimensions.width_in and z.width_in > 0:
+            fill_pct = min(98, max(18, round((item.dimensions.width_in / z.width_in) * 100)))
+            side_gap = max(0.5, round((z.width_in - item.dimensions.width_in) / 2.0, 1))
+            scale_ratio_txt = (
+                f" — MUST visually span EXACTLY {fill_pct}% of the {z.width_in:.1f}\" wall gap "
+                f"(leaving ~{side_gap:.1f}\" of visible open wall/floor clearance on each side)"
+            )
         z_txt = (
             f'inside {z.label} (normalized bbox {z.bbox.as_list()}, real wall span {z.width_in}" W)'
             if z
             else "in the target open floor/wall area"
         )
         placement_specs.append(
-            f"- Item {idx + 1} ({item.category}): '{item.title}' ({dim_txt}) -> place {z_txt}."
+            f"- Item {idx + 1} ({item.category}): '{item.title}' ({dim_txt}) -> place {z_txt}{scale_ratio_txt}."
         )
 
     protected_txt = ""
@@ -329,9 +337,15 @@ async def render_surgical_swap(
 
     img = Image.open(BytesIO(room_image_bytes))
     aspect_ratio = _nearest_aspect_ratio(*img.size)
+    old_w = target_item.dimensions.width_in
+    new_w = new_sku.dimensions.width_in
+    new_d = new_sku.dimensions.depth_in
+    new_h = new_sku.dimensions.height_in
     dim_txt = (
-        f'{new_sku.dimensions.width_in}"W'
-        if new_sku.dimensions.width_in
+        f'{new_w}"W'
+        + (f' x {new_d}"D' if new_d else "")
+        + (f' x {new_h}"H' if new_h else "")
+        if new_w
         else "honest real-world proportions"
     )
     zone_txt = (
@@ -340,28 +354,67 @@ async def render_surgical_swap(
         else "in the exact position of the previous item"
     )
 
-    prompt = (
-        f"SURGICAL SINGLE-ITEM SWAP: Replace ONLY the {target_item.category} ('{target_item.title}') "
-        f"with the new verified Shopify product ('{new_sku.title}', {dim_txt}) shown in the attached "
-        f"product reference image {zone_txt}.\n"
-        "CRITICAL: Keep ALL other furniture items, walls, baseboards, lighting, shadows, and camera "
-        "framing 100% identical to the previous render. Ensure zero wall clipping and honest physical scale. "
-        "ZERO UNREQUESTED PROPS: Do NOT add laptops, monitors, keyboards, game controllers, plants, books, "
-        "or staging clutter that were not explicitly requested in the cart."
+    is_size_change = (
+        old_w is not None
+        and new_w is not None
+        and abs(new_w - old_w) >= 2.0
     )
+    scale_directive = ""
+    if zone and new_w and zone.width_in > 0:
+        fill_pct = min(98, max(18, round((new_w / zone.width_in) * 100)))
+        side_gap = max(0.5, round((zone.width_in - new_w) / 2.0, 1))
+        scale_directive = (
+            f" STRICT PHYSICAL SCALE RATIO: This {new_w:.1f}\"W item MUST visually occupy EXACTLY "
+            f"{fill_pct}% of the {zone.width_in:.1f}\" measured gap, leaving ~{side_gap:.1f}\" of open "
+            f"wall/floor space on each side."
+        )
+        if is_size_change and old_w:
+            delta_pct = round(((new_w - old_w) / old_w) * 100)
+            direction = "WIDER" if new_w > old_w else "NARROWER"
+            scale_directive += (
+                f" IMPORTANT SIZE CHANGE: Make the tabletop and legs unmistakably {abs(delta_pct)}% "
+                f"{direction} than the previous {old_w:.1f}\"W version ({old_w:.1f}\"W -> {new_w:.1f}\"W)!"
+            )
 
-    ref_inputs: list[tuple[bytes, str]] = []
-    if not prior_interaction_id:
-        ref_inputs.append((prior_render_bytes, "image/jpeg"))
-    for _, sbytes, smime in new_refs:
-        ref_inputs.append((sbytes, smime))
+    if is_size_change:
+        # Render cleanly from the original room photo so Nano Banana does NOT stay locked
+        # onto the previous item's pixel silhouette when resizing a variant!
+        prompt = (
+            f"Photorealistically place ONLY the verified Shopify {new_sku.category} ('{new_sku.title}', {dim_txt}) "
+            f"shown in the attached product reference image into Image 1 (the original empty room) {zone_txt}.\n"
+            f"{scale_directive}\n"
+            "CRITICAL: Preserve Image 1's exact walls, baseboards, outlets, adjacent furniture, floor, and "
+            "natural lighting 100% identically. ZERO UNREQUESTED PROPS: Do NOT add laptops, monitors, "
+            "keyboards, game controllers, plants, books, or staging clutter."
+        )
+        ref_inputs: list[tuple[bytes, str]] = [(room_image_bytes, "image/jpeg")]
+        for _, sbytes, smime in new_refs:
+            ref_inputs.append((sbytes, smime))
+        effective_prior_id = None
+    else:
+        prompt = (
+            f"SURGICAL SINGLE-ITEM SWAP: Replace ONLY the {target_item.category} ('{target_item.title}') "
+            f"with the new verified Shopify product ('{new_sku.title}', {dim_txt}) shown in the attached "
+            f"product reference image {zone_txt}.\n"
+            f"{scale_directive}\n"
+            "CRITICAL: Keep ALL other furniture items, walls, baseboards, lighting, shadows, and camera "
+            "framing 100% identical to the previous render. Ensure zero wall clipping and honest physical scale. "
+            "ZERO UNREQUESTED PROPS: Do NOT add laptops, monitors, keyboards, game controllers, plants, books, "
+            "or staging clutter that were not explicitly requested in the cart."
+        )
+        ref_inputs = []
+        if not prior_interaction_id:
+            ref_inputs.append((prior_render_bytes, "image/jpeg"))
+        for _, sbytes, smime in new_refs:
+            ref_inputs.append((sbytes, smime))
+        effective_prior_id = prior_interaction_id
 
     out_bytes, out_mime, inter_id = await asyncio.to_thread(
         _invoke_nano_banana_sync,
         prompt,
         ref_inputs,
         aspect_ratio,
-        prior_interaction_id,
+        effective_prior_id,
     )
     return out_bytes, out_mime, inter_id, new_refs
 

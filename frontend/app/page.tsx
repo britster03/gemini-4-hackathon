@@ -288,10 +288,49 @@ export default function DatumStudioPage() {
       if (item.item_id !== itemId) return item;
       const chosen = item.variants.find((v) => v.variant_id === variantId);
       if (!chosen) return item;
+
+      // Parse W x D x H from size variant label (e.g. '39.4" x 18.9" x 29.5"')
+      let nextW = item.width_in ?? null;
+      let nextD = item.depth_in ?? null;
+      let nextH = item.height_in ?? null;
+      let nextFitState = item.fit_state;
+      let nextFitLabel = item.fit_label;
+
+      const dimMatch = chosen.label.match(
+        /(\d+(?:\.\d+)?)\s*(?:"|in|inch|inches)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:"|in|inch|inches)?(?:\s*[x×]\s*(\d+(?:\.\d+)?))?/i
+      );
+      if (dimMatch) {
+        const parsedW = parseFloat(dimMatch[1]);
+        const parsedD = parseFloat(dimMatch[2]);
+        const parsedH = dimMatch[3] ? parseFloat(dimMatch[3]) : nextH;
+        if (parsedW >= 6 && parsedW <= 140) {
+          nextW = Math.round(parsedW * 10) / 10;
+          const usableW = Math.max(1, Math.round((item.zone_width_in - 2.0) * 10) / 10);
+          if (nextW <= usableW) {
+            nextFitState = "verified";
+            nextFitLabel = `Verified Fit · ${nextW.toFixed(1)}" <= ${usableW.toFixed(1)}"`;
+          } else {
+            nextFitState = "blocked";
+            nextFitLabel = `Exceeds gap · ${nextW.toFixed(1)}" > ${usableW.toFixed(1)}"`;
+          }
+        }
+        if (parsedD >= 6 && parsedD <= 140) {
+          nextD = Math.round(parsedD * 10) / 10;
+        }
+        if (parsedH !== null && parsedH >= 4 && parsedH <= 120) {
+          nextH = Math.round(parsedH * 10) / 10;
+        }
+      }
+
       return {
         ...item,
         selected_variant_id: chosen.variant_id,
         price_usd: chosen.price_usd,
+        width_in: nextW,
+        depth_in: nextD,
+        height_in: nextH,
+        fit_state: nextFitState,
+        fit_label: nextFitLabel,
       };
     });
     const newTotal =

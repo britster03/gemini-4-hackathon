@@ -261,9 +261,9 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
       />
 
       {/* LEFT 64% — Full-Width Interactive Room Preview (Zero Cropping, Clickable Pins) */}
-      <section className="relative w-full lg:w-[64%] h-[48%] lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-at-border bg-[#0C0D10] min-h-0">
-        <div className="px-4 py-2.5 border-b border-white/10 bg-[#14161B]/95 backdrop-blur flex flex-wrap items-center justify-between gap-2 shrink-0 z-20">
-          <span className="inline-flex items-center gap-1.5 text-xs text-[#10B981] font-medium">
+      <section className="relative w-full lg:w-[64%] h-[48%] lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-at-border bg-at-surface min-h-0">
+        <div className="px-4 py-2.5 border-b border-at-border bg-at-card/95 backdrop-blur flex flex-wrap items-center justify-between gap-2 shrink-0 z-20">
+          <span className="inline-flex items-center gap-1.5 text-xs text-at-emerald font-medium">
             <CheckCircle2 className="h-3.5 w-3.5" />
             {images.length > 0
               ? `${images.length} Room Photo${images.length > 1 ? "s" : ""} Ready`
@@ -272,7 +272,7 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
 
           {images.length === 0 && (
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#0C0D10] border border-white/12 text-xs">
+              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-at-surface border border-at-border text-xs">
                 {(["original", "blueprint", "rendered"] as ShowcaseMode[]).map(
                   (mode) => (
                     <button
@@ -281,8 +281,8 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
                       onClick={() => setShowcaseMode(mode)}
                       className={`px-3 py-1 rounded-md font-medium capitalize transition-all cursor-pointer ${
                         showcaseMode === mode
-                          ? "bg-[#38BDF8] text-[#0C0D10] font-semibold"
-                          : "text-[#9BA1AE] hover:text-white"
+                          ? "bg-at-cyan text-white font-semibold shadow-xs"
+                          : "text-at-muted hover:text-at-ink"
                       }`}
                     >
                       {mode}
@@ -292,14 +292,14 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
               </div>
 
               {showcaseMode === "rendered" && (
-                <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#0C0D10] border border-white/12 text-xs">
+                <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-at-surface border border-at-border text-xs">
                   <button
                     type="button"
                     onClick={() => setShowcaseSwappedV2(false)}
                     className={`px-2 py-1 rounded cursor-pointer ${
                       !showcaseSwappedV2
-                        ? "bg-[#10B981]/20 text-[#10B981] font-semibold"
-                        : "text-[#9BA1AE] hover:text-white"
+                        ? "bg-at-emerald/15 text-at-emerald font-semibold"
+                        : "text-at-muted hover:text-at-ink"
                     }`}
                   >
                     v1
@@ -312,8 +312,8 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
                     }}
                     className={`px-2 py-1 rounded cursor-pointer ${
                       showcaseSwappedV2
-                        ? "bg-[#10B981]/20 text-[#10B981] font-semibold"
-                        : "text-[#9BA1AE] hover:text-white"
+                        ? "bg-at-emerald/15 text-at-emerald font-semibold"
+                        : "text-at-muted hover:text-at-ink"
                     }`}
                   >
                     v2 Chair Swap
@@ -427,9 +427,9 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
 
               {/* Clean Floating Selected-Item Pill on Canvas */}
               {showcaseMode === "rendered" && (
-                <div className="absolute bottom-3 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2 bg-[#14161B]/92 backdrop-blur border border-white/12 rounded-xl px-3.5 py-2 text-xs text-white">
+                <div className="absolute bottom-3 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2 bg-at-card/95 backdrop-blur-md border border-at-border rounded-xl px-3.5 py-2 text-xs text-at-ink shadow-lg">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="h-6 w-6 rounded-full bg-[#38BDF8] text-[#0C0D10] font-mono font-bold flex items-center justify-center shrink-0">
+                    <span className="h-6 w-6 rounded-full bg-at-cyan text-white font-mono font-bold flex items-center justify-center shrink-0">
                       {activePinItem.pin}
                     </span>
                     <div className="min-w-0">
@@ -438,18 +438,18 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
                           ? activePinItem.swapTitle
                           : activePinItem.title}
                       </p>
-                      <p className="text-[11px] text-[#9BA1AE] truncate">
+                      <p className="text-[11px] text-at-muted truncate">
                         <Store className="inline h-3 w-3 mr-1" />
                         {activePinItem.pin === 2 && showcaseSwappedV2 && activePinItem.swapMerchant
                           ? activePinItem.swapMerchant
                           : activePinItem.merchant}{" "}
                         · {activePinItem.dims} ·{" "}
-                        <span className="text-[#10B981]">{activePinItem.fitLabel}</span>
+                        <span className="text-at-emerald font-medium">{activePinItem.fitLabel}</span>
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="font-mono font-semibold text-sm">
+                    <span className="font-mono font-semibold text-sm text-at-ink">
                       $
                       {(activePinItem.pin === 2 && showcaseSwappedV2 && activePinItem.swapPrice
                         ? activePinItem.swapPrice
@@ -460,7 +460,7 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
                       <button
                         type="button"
                         onClick={() => setShowcaseSwappedV2((v) => !v)}
-                        className="px-2.5 py-1 rounded-lg bg-[#38BDF8]/15 border border-[#38BDF8]/45 text-[#38BDF8] hover:bg-[#38BDF8]/25 inline-flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-at-cyan/12 border border-at-cyan/40 text-at-cyan hover:bg-at-cyan/20 inline-flex items-center gap-1 cursor-pointer font-medium"
                       >
                         <RefreshCw className="h-3 w-3" />
                         {showcaseSwappedV2 ? "Back to Option 1" : "Try Chair Swap"}

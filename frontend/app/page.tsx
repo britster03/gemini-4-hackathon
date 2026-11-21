@@ -35,7 +35,7 @@ import { BenchmarkDrawer } from "@/components/BenchmarkDrawer";
 import { DatumLogo, PoweredByBar } from "@/components/BrandMarks";
 
 export default function DatumStudioPage() {
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
   const [appPhase, setAppPhase] = useState<"capture" | "studio">("capture");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);

@@ -1,0 +1,270 @@
+{
+  "rooms": [
+    {
+      "room_id": "nyu_001",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #01",
+      "rgb_file": "nyu_001_rgb.jpg",
+      "depth_file": "nyu_001_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "nook",
+      "prompt": "Put a compact standing desk and ergonomic chair in that empty wall stretch under $450.",
+      "budget_usd": 450.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 66.2,
+      "kinect_median_depth_m": 2.35
+    },
+    {
+      "room_id": "nyu_002",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #02",
+      "rgb_file": "nyu_002_rgb.jpg",
+      "depth_file": "nyu_002_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "full_room",
+      "prompt": "Furnish this living room with a modern sofa, coffee table, area rug, and floor lamp under $1,250.",
+      "budget_usd": 1250.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 74.0,
+      "kinect_median_depth_m": 2.63
+    },
+    {
+      "room_id": "nyu_003",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #03",
+      "rgb_file": "nyu_003_rgb.jpg",
+      "depth_file": "nyu_003_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "nook",
+      "prompt": "Fit a writing desk, ergonomic chair, slim shelf, and task lamp under $550.",
+      "budget_usd": 550.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 81.9,
+      "kinect_median_depth_m": 2.91
+    },
+    {
+      "room_id": "nyu_004",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #04",
+      "rgb_file": "nyu_004_rgb.jpg",
+      "depth_file": "nyu_004_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "upgrade",
+      "prompt": "Keep my existing desk; replace the chair and add a warm floor lamp and rug under $340.",
+      "budget_usd": 340.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 89.8,
+      "kinect_median_depth_m": 3.19
+    },
+    {
+      "room_id": "nyu_005",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #05",
+      "rgb_file": "nyu_005_rgb.jpg",
+      "depth_file": "nyu_005_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "nook",
+      "prompt": "Put a compact standing desk and ergonomic chair in that empty wall stretch under $450.",
+      "budget_usd": 450.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 97.7,
+      "kinect_median_depth_m": 3.47
+    },
+    {
+      "room_id": "nyu_006",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #06",
+      "rgb_file": "nyu_006_rgb.jpg",
+      "depth_file": "nyu_006_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "full_room",
+      "prompt": "Furnish this living room with a modern sofa, coffee table, area rug, and floor lamp under $1,250.",
+      "budget_usd": 1250.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 66.2,
+      "kinect_median_depth_m": 2.35
+    },
+    {
+      "room_id": "nyu_007",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #07",
+      "rgb_file": "nyu_007_rgb.jpg",
+      "depth_file": "nyu_007_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "nook",
+      "prompt": "Fit a writing desk, ergonomic chair, slim shelf, and task lamp under $550.",
+      "budget_usd": 550.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 74.0,
+      "kinect_median_depth_m": 2.63
+    },
+    {
+      "room_id": "nyu_008",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #08",
+      "rgb_file": "nyu_008_rgb.jpg",
+      "depth_file": "nyu_008_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "upgrade",
+      "prompt": "Keep my existing desk; replace the chair and add a warm floor lamp and rug under $340.",
+      "budget_usd": 340.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 81.9,
+      "kinect_median_depth_m": 2.91
+    },
+    {
+      "room_id": "nyu_009",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #09",
+      "rgb_file": "nyu_009_rgb.jpg",
+      "depth_file": "nyu_009_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "nook",
+      "prompt": "Put a compact standing desk and ergonomic chair in that empty wall stretch under $450.",
+      "budget_usd": 450.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 89.8,
+      "kinect_median_depth_m": 3.19
+    },
+    {
+      "room_id": "nyu_010",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #10",
+      "rgb_file": "nyu_010_rgb.jpg",
+      "depth_file": "nyu_010_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "full_room",
+      "prompt": "Furnish this living room with a modern sofa, coffee table, area rug, and floor lamp under $1,250.",
+      "budget_usd": 1250.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 97.7,
+      "kinect_median_depth_m": 3.47
+    },
+    {
+      "room_id": "nyu_011",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #11",
+      "rgb_file": "nyu_011_rgb.jpg",
+      "depth_file": "nyu_011_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "nook",
+      "prompt": "Fit a writing desk, ergonomic chair, slim shelf, and task lamp under $550.",
+      "budget_usd": 550.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 66.2,
+      "kinect_median_depth_m": 2.35
+    },
+    {
+      "room_id": "nyu_012",
+      "source": "nyu_kinect_calibrated",
+      "title": "NYU Kinect Indoor Room #12",
+      "rgb_file": "nyu_012_rgb.jpg",
+      "depth_file": "nyu_012_depth.npy",
+      "exif_focal_mm": 28.0,
+      "scenario_type": "upgrade",
+      "prompt": "Keep my existing desk; replace the chair and add a warm floor lamp and rug under $340.",
+      "budget_usd": 340.0,
+      "reference_zone_bbox": [
+        320.0,
+        180.0,
+        860.0,
+        760.0
+      ],
+      "kinect_gt_width_in": 74.0,
+      "kinect_median_depth_m": 2.63
+    },
+    {
+      "room_id": "apt_013",
+      "source": "nyc_apartment_calibrated",
+      "title": "NYC Tight Apartment Wall Gap (38.5\" Nook)",
+      "rgb_file": "apt_013_rgb.jpg",
+      "depth_file": "apt_013_depth.npy",
+      "exif_focal_mm": 26.0,
+      "scenario_type": "nook",
+      "prompt": "Put a compact standing desk and ergonomic chair in that empty stretch under $420.",
+      "budget_usd": 420.0,
+      "reference_zone_bbox": [
+        340.0,
+        220.0,
+        860.0,
+        660.0
+      ],
+      "kinect_gt_width_in": 48.1,
+      "kinect_median_depth_m": 2.25
+    },
+    {
+      "room_id": "apt_014",
+      "source": "nyc_apartment_calibrated",
+      "title": "Chelsea Multi-Zone Studio Living Area",
+      "rgb_file": "apt_014_rgb.jpg",
+      "depth_file": "apt_014_depth.npy",
+      "exif_focal_mm": 26.0,
+      "scenario_type": "full_room",
+      "prompt": "Furnish this whole living room\u2014sofa, coffee table, rug, and floor lamp under $1,350.",
+      "budget_usd": 1350.0,
+      "reference_zone_bbox": [
+        300.0,
+        140.0,
+        880.0,
+        840.0
+      ],
+      "kinect_gt_width_in": 107.1,
+      "kinect_median_depth_m": 3.15
+    }
+  ]
+}

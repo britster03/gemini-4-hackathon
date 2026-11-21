@@ -120,9 +120,9 @@ def parse_dimensions_labeled_deterministic(title: str, description_plain: str) -
     height_in: float | None = None
     matched_snippets: list[str] = []
 
-    # 1. Explicit axis-suffixed tokens (`40"W`, `24"D`, `29.5"H`)
+    # 1. Explicit axis-suffixed tokens (`40"W`, `24"D`, `29.5"H`) — require explicit inch unit so '3D/4D armrests' is never read as 3.0"D!
     axis_tokens = re.findall(
-        r'(\d{1,3}(?:\.\d+)?)\s*(?:"|in\.?|inch(?:es)?)?\s*([WDHLwdhl])\b',
+        r'(\d{1,3}(?:\.\d+)?)\s*(?:"|\'\'|in\.?\b|inch(?:es)?\b)\s*([WDHLwdhl])\b',
         blob,
     )
     axis_map: dict[str, float] = {}

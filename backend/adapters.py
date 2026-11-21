@@ -176,29 +176,30 @@ async def run_scale_calibration(
     """Delegate to Engineer A's `scale_engine` if available; else run Neon `xhigh` + pinhole math."""
     t0 = time.perf_counter()
 
-    # 1. Try Engineer A's module first if present
-    for mod_name in ("backend.scale_engine", "scale_engine"):
-        try:
-            mod = importlib.import_module(mod_name)
-            if hasattr(mod, "calibrate_space"):
-                res = mod.calibrate_space(
-                    session_id=session_id,
-                    image_bytes=image_bytes,
-                    prompt=prompt,
-                    scope=scope,
-                    exif_focal_mm=exif_focal_mm,
-                    thinking_level=thinking_level,
-                )
-                if hasattr(res, "__await__"):
-                    res = await res
-                if isinstance(res, ScaleReadyEvent):
-                    return res
-                if isinstance(res, dict):
-                    return ScaleReadyEvent(**res)
-        except ModuleNotFoundError:
-            continue
-        except Exception:
-            break
+    # 1. Try Engineer A's module first if present (when live credentials are active)
+    if has_live_gemini_credentials():
+        for mod_name in ("backend.scale_engine", "scale_engine"):
+            try:
+                mod = importlib.import_module(mod_name)
+                if hasattr(mod, "calibrate_space"):
+                    res = mod.calibrate_space(
+                        session_id=session_id,
+                        image_bytes=image_bytes,
+                        prompt=prompt,
+                        scope=scope,
+                        exif_focal_mm=exif_focal_mm,
+                        thinking_level=thinking_level,
+                    )
+                    if hasattr(res, "__await__"):
+                        res = await res
+                    if isinstance(res, ScaleReadyEvent):
+                        return res
+                    if isinstance(res, dict):
+                        return ScaleReadyEvent(**res)
+            except ModuleNotFoundError:
+                continue
+            except Exception:
+                break
 
     img = Image.open(BytesIO(image_bytes))
     img_w, img_h = img.size

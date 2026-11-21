@@ -41,7 +41,7 @@ from PIL import ExifTags, Image
 from pydantic import BaseModel, Field
 
 from agents.verify_bundle import verify_bundle_dict
-from backend.config import has_live_gemini_credentials
+from backend import config as _backend_config
 from backend.genai_client import (
     MODEL_NEON,
     MODEL_TRANSCRIBE,
@@ -903,7 +903,7 @@ async def calibrate_space(
     if resolved_img is None:
         raise ValueError("Either image_input or image_bytes is required.")
 
-    if session_id is not None and not has_live_gemini_credentials():
+    if session_id is not None and not _backend_config.has_live_gemini_credentials():
         # Allow Engineer B's offline unit tests to fall through to deterministic fixture
         raise RuntimeError("No live Gemini credentials; delegate to offline adapter fixture.")
 

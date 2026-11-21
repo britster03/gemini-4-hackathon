@@ -32,7 +32,7 @@ import { GlassBoxRail } from "@/components/GlassBoxRail";
 import { ShopifyCommerceRail } from "@/components/ShopifyCommerceRail";
 import { VoiceSpatialThread } from "@/components/VoiceSpatialThread";
 import { BenchmarkDrawer } from "@/components/BenchmarkDrawer";
-import { DatumLogo } from "@/components/BrandMarks";
+import { DatumLogo, PoweredByBar } from "@/components/BrandMarks";
 
 export default function DatumStudioPage() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -527,12 +527,14 @@ export default function DatumStudioPage() {
           )}
         </div>
 
-        {/* Center: Studio Space Scope Chip (hidden on capture screen) */}
+        {/* Center: Official Sponsor Strip on Capture OR Studio Scope Chip */}
         <div className="hidden md:flex items-center gap-2.5">
-          {appPhase === "studio" && (
+          {appPhase === "studio" ? (
             <span className="px-2.5 py-1 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono text-at-muted">
               {scaleData?.scope_label ?? "Calibrating Space…"}
             </span>
+          ) : (
+            <PoweredByBar compact />
           )}
         </div>
 

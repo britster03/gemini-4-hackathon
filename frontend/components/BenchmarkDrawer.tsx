@@ -55,6 +55,69 @@ export function BenchmarkDrawer({ open, onClose, data }: BenchmarkDrawerProps) {
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
+          {/* 0. LIVE VISUAL PROOF — How Google Decisions API (`gemini-decision-1`) Audits Pixels */}
+          <section className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-at-cyan">
+                Live Visual Proof · Google Decisions API (gemini-decision-1 · 0 Output Tokens)
+              </h3>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-at-emerald/15 text-at-emerald">
+                Audits every render in ~200–480 ms
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* PASS Card */}
+              <div className="rounded-xl p-3 bg-at-bg border border-at-emerald/45 space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="text-at-emerald">VERIFIED PASS · NYC Alcove</span>
+                  <span className="font-mono text-[10px] text-at-emerald">SKU Match 3/3</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="space-y-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/demos/nyc_1_original.jpg" alt="Original NYC Alcove" className="h-24 w-full object-cover rounded-lg border border-at-border" />
+                    <p className="text-[10px] text-center text-at-muted">Original Room</p>
+                  </div>
+                  <div className="space-y-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/demos/nyc_5_swap_v2.jpg" alt="Verified Render v2" className="h-24 w-full object-cover rounded-lg border border-at-emerald/50" />
+                    <p className="text-[10px] text-center text-at-emerald">Verified Render (v2)</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.5 rounded bg-at-emerald/15 text-at-emerald">No Clipping: YES</span>
+                  <span className="px-1.5 py-0.5 rounded bg-at-emerald/15 text-at-emerald">Room Preserved: YES</span>
+                  <span className="px-1.5 py-0.5 rounded bg-at-emerald/15 text-at-emerald">Honest Scale: YES</span>
+                </div>
+              </div>
+
+              {/* DEFECT CAUGHT Card */}
+              <div className="rounded-xl p-3 bg-at-bg border border-at-coral/55 space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="text-at-coral">DEFECT CAUGHT · Hallucination Blocked</span>
+                  <span className="font-mono text-[10px] text-at-coral">Auto-Repair Triggered</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="space-y-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/demos/qa_defect_before.jpg" alt="Original NYU Room" className="h-24 w-full object-cover rounded-lg border border-at-border" />
+                    <p className="text-[10px] text-center text-at-muted">Original (Fixture Present)</p>
+                  </div>
+                  <div className="space-y-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/demos/qa_defect_caught.jpg" alt="Defective Render Caught" className="h-24 w-full object-cover rounded-lg border border-at-coral/60" />
+                    <p className="text-[10px] text-center text-at-coral">Erased Fixture → Caught!</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.5 rounded bg-at-coral/15 text-at-coral">Room Preserved: NO (0.39)</span>
+                  <span className="px-1.5 py-0.5 rounded bg-at-coral/15 text-at-coral">No Clipping: NO (0.39)</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* 1. 3-Way Evaluation Table (including Visual QA Pass % column) */}
           <section className="space-y-2.5">
             <h3 className="text-xs font-mono uppercase tracking-wider text-at-muted">

@@ -27,93 +27,75 @@ interface GlassBoxRailProps {
   hookData: HookEvent | null;
   cartData: CartReadyEvent | null;
   decisionsQA: DecisionsQAResult | null;
-  budgetUsd: number;
   isStreaming: boolean;
   elapsedSec: number;
 }
 
-type LogTab = "guardrail" | "qa" | "scale" | "catalog";
+type LogTab = "scale" | "catalog" | "guardrail" | "qa";
 
-/**
- * Shopping-First Collapsible Trust Summary Bar.
- * Stays collapsed to a single slim line by default so ~80% of the right panel
- * is dedicated to furniture cards & checkout; expands on click for judges.
- */
 export function GlassBoxRail({
   scaleData,
   catalogData,
   hookData,
   cartData,
   decisionsQA,
-  budgetUsd,
   isStreaming,
   elapsedSec,
 }: GlassBoxRailProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<LogTab>("guardrail");
 
-  // Animated circular gauge math (circumference = 2 * pi * 18 ≈ 113.1)
-  const zoneWidth = scaleData?.zones[0]?.width_in ?? 43.5;
-  const maxItemWidth =
-    cartData?.items.reduce((max, item) => Math.max(max, item.width_in ?? 0), 0) ?? 0;
-  const fitPct =
-    zoneWidth > 0 && maxItemWidth > 0
-      ? Math.min(100, Math.round((maxItemWidth / zoneWidth) * 100))
-      : 0;
-  const fitOverflow = maxItemWidth > Math.max(0, zoneWidth - 2);
-  const fitMargin = Math.max(0, zoneWidth - maxItemWidth);
+  const refusalReason = hookData?.refusal_reason || cartData?.refusal_reason || null;
+  const isRefused =
+    hookData?.status === "refused" ||
+    cartData?.status === "safe_refusal" ||
+    Boolean(refusalReason);
 
-  const totalUsd = cartData?.total_usd ?? 0;
-  const budgetPct =
-    budgetUsd > 0 ? Math.min(100, Math.round((totalUsd / budgetUsd) * 100)) : 0;
-  const overBudget = totalUsd > budgetUsd;
-  const budgetLeft = Math.max(0, budgetUsd - totalUsd);
-
-  const circ = 113.1;
-  const fitOffset = circ - (circ * fitPct) / 100;
-  const budgetOffset = circ - (circ * budgetPct) / 100;
-
-  const isRefused = hookData?.status === "refused";
-  const hasAutoSwap = (hookData?.blocked_count ?? 0) > 0;
+  const anchorName =
+    scaleData?.calibration_layer === "layer2_depth_exif"
+      ? "Depth+EXIF"
+      : scaleData?.anchors[0]?.label ?? "Outlet";
+  const skusCount = catalogData?.skus_screened ?? 0;
+  const blockedCount = hookData?.blocked_count ?? 0;
 
   const summaryText = isStreaming
     ? !scaleData
-      ? `Measuring room anchors… (${elapsedSec.toFixed(1)}s)`
+      ? `Scale calibrating… (${elapsedSec.toFixed(1)}s)`
       : !catalogData
-      ? `Searching live Shopify stores… (${elapsedSec.toFixed(1)}s)`
+      ? `Shop MCP searching… (${elapsedSec.toFixed(1)}s)`
       : !hookData
-      ? `Running fit & budget checks… (${elapsedSec.toFixed(1)}s)`
-      : `Rendering exact items & running QA… (${elapsedSec.toFixed(1)}s)`
+      ? `hooks.json checking… (${elapsedSec.toFixed(1)}s)`
+      : `Nano Banana rendering + QA… (${elapsedSec.toFixed(1)}s)`
     : isRefused
-    ? "Safe Refusal · Constraint exceeded"
-    : `Verified Fit${
-        hasAutoSwap
-          ? ` · ${hookData?.blocked_count} oversized item auto-swapped`
-          : ""
-      }${decisionsQA ? ` · ${decisionsQA.latency_ms}ms QA` : ""}`;
+    ? "Safe Refusal · No SKU fits wall + budget"
+    : `${anchorName} · ${skusCount} SKUs · ${
+        blockedCount > 0 ? `${blockedCount} blocked → swapped` : "0 violations"
+      }${decisionsQA ? ` · ${decisionsQA.latency_ms} ms` : ""}`;
 
   return (
     <div className="border-b border-at-border bg-at-card shrink-0">
-      {/* Slim Single-Line Trust Summary Pill (Collapsed by Default) */}
+      {/* Slim Single-Line Compact Verified Summary (Collapsed by Default) */}
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
-        className="w-full px-4 py-2.5 flex items-center justify-between gap-2 text-left hover:bg-at-surface/60 transition-colors cursor-pointer"
+        className="w-full px-4 py-2.5 flex items-center justify-between gap-2 text-left hover:bg-at-bg/60 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2 min-w-0">
           {isStreaming ? (
             <Loader2 className="h-3.5 w-3.5 text-at-cyan animate-spin shrink-0" />
           ) : isRefused ? (
             <ShieldAlert className="h-3.5 w-3.5 text-at-coral shrink-0" />
+          ) : blockedCount > 0 ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-at-notice shrink-0" />
           ) : (
             <CheckCircle2 className="h-3.5 w-3.5 text-at-emerald shrink-0" />
           )}
           <span
-            className={`text-xs font-medium truncate tabular-nums-strict ${
+            className={`text-xs font-mono truncate tabular-nums-strict ${
               isStreaming
                 ? "text-at-cyan"
                 : isRefused
-                ? "text-at-coral"
+                ? "text-at-coral font-semibold"
                 : "text-at-ink"
             }`}
           >
@@ -131,136 +113,39 @@ export function GlassBoxRail({
         </span>
       </button>
 
-      {/* Expandable Judge Proof Panel (Gauges + 4-Stage Tabs + Raw Traces) */}
-      {isExpanded && (
-        <div className="px-4 pb-3.5 pt-2 border-t border-at-border bg-at-surface/50 space-y-3">
-          {/* Compact Animated Space Fit & Budget Gauges */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="p-2.5 rounded-xl bg-at-card border border-at-border flex items-center gap-2.5">
-              <svg width="42" height="42" viewBox="0 0 46 46" className="shrink-0">
-                <circle
-                  cx="23"
-                  cy="23"
-                  r="18"
-                  fill="none"
-                  stroke="var(--at-border)"
-                  strokeWidth="5"
-                />
-                <circle
-                  cx="23"
-                  cy="23"
-                  r="18"
-                  fill="none"
-                  stroke={fitOverflow ? "var(--at-coral)" : "var(--at-emerald)"}
-                  strokeWidth="5"
-                  strokeDasharray={circ}
-                  strokeDashoffset={fitOffset}
-                  strokeLinecap="round"
-                  transform="rotate(-90 23 23)"
-                  className="gauge-ring"
-                />
-                <text
-                  x="23"
-                  y="26"
-                  textAnchor="middle"
-                  fill="var(--at-ink)"
-                  fontSize="10"
-                  fontFamily="monospace"
-                  fontWeight="700"
-                >
-                  {fitPct}%
-                </text>
-              </svg>
-              <div className="min-w-0">
-                <p className="text-[11px] text-at-muted">Space Fit</p>
-                <p className="text-xs font-mono font-semibold tabular-nums-strict text-at-ink truncate">
-                  {maxItemWidth > 0 ? `${maxItemWidth.toFixed(1)}"` : "—"} /{" "}
-                  {zoneWidth.toFixed(1)}&quot;
-                </p>
-                <p
-                  className={`text-[10px] font-mono truncate ${
-                    fitOverflow ? "text-at-coral" : "text-at-emerald"
-                  }`}
-                >
-                  {maxItemWidth === 0
-                    ? "Checking…"
-                    : fitOverflow
-                    ? "Exceeds margin"
-                    : `+${fitMargin.toFixed(1)}" buffer`}
-                </p>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-at-card border border-at-border flex items-center gap-2.5">
-              <svg width="42" height="42" viewBox="0 0 46 46" className="shrink-0">
-                <circle
-                  cx="23"
-                  cy="23"
-                  r="18"
-                  fill="none"
-                  stroke="var(--at-border)"
-                  strokeWidth="5"
-                />
-                <circle
-                  cx="23"
-                  cy="23"
-                  r="18"
-                  fill="none"
-                  stroke={overBudget ? "var(--at-coral)" : "var(--at-accent)"}
-                  strokeWidth="5"
-                  strokeDasharray={circ}
-                  strokeDashoffset={budgetOffset}
-                  strokeLinecap="round"
-                  transform="rotate(-90 23 23)"
-                  className="gauge-ring"
-                />
-                <text
-                  x="23"
-                  y="26"
-                  textAnchor="middle"
-                  fill="var(--at-ink)"
-                  fontSize="10"
-                  fontFamily="monospace"
-                  fontWeight="700"
-                >
-                  {budgetPct}%
-                </text>
-              </svg>
-              <div className="min-w-0">
-                <p className="text-[11px] text-at-muted">Budget Used</p>
-                <p className="text-xs font-mono font-semibold tabular-nums-strict text-at-ink truncate">
-                  ${totalUsd.toFixed(0)} / ${budgetUsd}
-                </p>
-                <p
-                  className={`text-[10px] font-mono truncate ${
-                    overBudget ? "text-at-coral" : "text-at-accent"
-                  }`}
-                >
-                  {overBudget
-                    ? `+$${(totalUsd - budgetUsd).toFixed(0)} over`
-                    : `$${budgetLeft.toFixed(0)} left`}
-                </p>
-              </div>
-            </div>
+      {/* Coral Safe Refusal Banner (Always Visible When Triggered — Section 03.D) */}
+      {isRefused && (
+        <div className="mx-3 mb-2.5 px-3 py-2 rounded-xl bg-at-coral/12 border border-at-coral/50 text-xs text-at-coral flex items-start gap-2">
+          <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <p className="font-semibold">Safe Refusal — Guardrail Enforced</p>
+            <p className="text-[11px] font-mono text-at-coral/90">
+              {refusalReason ||
+                "No in-stock Shopify SKU satisfies both the physical wall clearance and strict USD budget cap."}
+            </p>
           </div>
+        </div>
+      )}
 
-          {/* 4-Stage Inspector Tabs */}
+      {/* Expandable 4-Stage Glass-Box Verification Strip (Scale | Catalog | Guardrail | Visual QA) */}
+      {isExpanded && (
+        <div className="px-3 pb-3 pt-2 border-t border-at-border bg-at-bg/60 space-y-2.5">
           <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-at-card border border-at-border">
             {(
               [
-                { key: "guardrail", label: "Fit Hook", icon: <ShieldCheck className="h-3 w-3" /> },
-                { key: "qa", label: "Visual QA", icon: <Eye className="h-3 w-3" /> },
                 { key: "scale", label: "Scale", icon: <Ruler className="h-3 w-3" /> },
-                { key: "catalog", label: "Shop MCP", icon: <ShoppingBag className="h-3 w-3" /> },
+                { key: "catalog", label: "Catalog", icon: <ShoppingBag className="h-3 w-3" /> },
+                { key: "guardrail", label: "Guardrail", icon: <ShieldCheck className="h-3 w-3" /> },
+                { key: "qa", label: "Visual QA", icon: <Eye className="h-3 w-3" /> },
               ] as { key: LogTab; label: string; icon: React.ReactNode }[]
             ).map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`py-1.5 px-2 rounded-lg text-[11px] font-medium inline-flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                className={`py-1.5 px-1.5 rounded-lg text-[11px] font-medium inline-flex items-center justify-center gap-1 transition-colors cursor-pointer ${
                   activeTab === tab.key
-                    ? "bg-at-surface text-at-ink font-semibold"
+                    ? "bg-at-bg text-at-ink border border-at-cyan/40 font-semibold"
                     : "text-at-muted hover:text-at-ink"
                 }`}
               >
@@ -270,12 +155,11 @@ export function GlassBoxRail({
             ))}
           </div>
 
-          {/* Active Trace Content */}
           {activeTab === "guardrail" && hookData && (
             <div className="rounded-xl bg-at-card border border-at-border p-2.5 space-y-1.5 font-mono text-[11px] tabular-nums-strict">
               <div className="flex items-center justify-between text-[10px] text-at-muted pb-1 border-b border-at-border">
-                <span>.agents/hooks.json → verify_bundle.py</span>
-                <span className="text-at-notice">{hookData.blocked_count} blocked</span>
+                <span>.agents/hooks.json · pre_tool_execution → verify_bundle.py</span>
+                <span className="text-at-notice">{hookData.blocked_count} DENY</span>
               </div>
               {hookData.traces.map((t) => (
                 <div key={t.id} className="flex items-start gap-2 leading-relaxed">
@@ -299,9 +183,9 @@ export function GlassBoxRail({
           {activeTab === "qa" && decisionsQA && (
             <div className="rounded-xl bg-at-card border border-at-border p-2.5 space-y-2 font-mono text-[11px] tabular-nums-strict">
               <div className="flex items-center justify-between text-[10px] text-at-muted pb-1 border-b border-at-border">
-                <span>gemini-decision-1 Visual Audit</span>
+                <span>gemini-decision-1 (v1beta · zero-token audit)</span>
                 <span className="text-at-emerald">
-                  {decisionsQA.latency_ms} ms · {decisionsQA.output_tokens} tokens
+                  {decisionsQA.latency_ms} ms · {decisionsQA.output_tokens} output tokens
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-1.5">
@@ -312,7 +196,7 @@ export function GlassBoxRail({
                 ].map((v) => (
                   <div
                     key={v.label}
-                    className="flex items-center justify-between px-2 py-1 rounded bg-at-surface"
+                    className="flex items-center justify-between px-2 py-1 rounded bg-at-bg"
                   >
                     <span className="text-at-muted">{v.label}</span>
                     <span className={v.ok ? "text-at-emerald" : "text-at-coral"}>
@@ -320,7 +204,7 @@ export function GlassBoxRail({
                     </span>
                   </div>
                 ))}
-                <div className="flex items-center justify-between px-2 py-1 rounded bg-at-surface">
+                <div className="flex items-center justify-between px-2 py-1 rounded bg-at-bg">
                   <span className="text-at-muted">sku_fidelity</span>
                   <span className="text-at-emerald">{decisionsQA.sku_fidelity}/3</span>
                 </div>
@@ -336,6 +220,10 @@ export function GlassBoxRail({
 
           {activeTab === "scale" && scaleData && (
             <div className="rounded-xl bg-at-card border border-at-border p-2.5 space-y-1 font-mono text-[11px] tabular-nums-strict">
+              <div className="flex items-center justify-between text-[10px] text-at-muted pb-1 border-b border-at-border">
+                <span>gemini-4-neon (xhigh) multi-anchor audit</span>
+                <span className="text-at-cyan">±{scaleData.tolerance_in}&quot;</span>
+              </div>
               {scaleData.anchors.map((a) => (
                 <div key={a.id} className="flex items-center justify-between text-at-ink">
                   <span>
@@ -358,7 +246,16 @@ export function GlassBoxRail({
           )}
 
           {activeTab === "catalog" && catalogData && (
-            <div className="rounded-xl bg-at-card border border-at-border p-2.5 space-y-1 font-mono text-[10px] tabular-nums-strict">
+            <div className="rounded-xl bg-at-card border border-at-border p-2.5 space-y-1.5 font-mono text-[10px] tabular-nums-strict">
+              <div className="flex items-center justify-between text-at-muted pb-1 border-b border-at-border">
+                <span>
+                  Shop MCP · {catalogData.stores_scanned} stores ·{" "}
+                  {catalogData.skus_screened} SKUs screened
+                </span>
+                <span className="text-at-emerald">
+                  Decisions Gate {catalogData.catalog_gate_ms} ms
+                </span>
+              </div>
               {catalogData.mcp_calls.map((call, idx) => (
                 <div key={idx} className="flex items-center gap-1.5 text-at-muted truncate">
                   <CheckCircle2 className="h-3 w-3 text-at-emerald shrink-0" />

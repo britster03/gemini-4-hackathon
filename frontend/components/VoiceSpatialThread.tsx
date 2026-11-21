@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type {
   AlternativeSKUCard,
+  DetectedZone,
   ThreadMessage,
   VerifiedCartItem,
 } from "@/types/clearbuy";
@@ -21,6 +22,7 @@ import type {
 interface VoiceSpatialThreadProps {
   messages: ThreadMessage[];
   pinnedItem: VerifiedCartItem | null;
+  pinnedZone: DetectedZone | null;
   onClearPin: () => void;
   onSendUtterance: (utterance: string) => Promise<void>;
   onSelectAlternative: (alt: AlternativeSKUCard) => Promise<void>;
@@ -44,9 +46,15 @@ const QUICK_CHIPS = [
   "Put a 72-inch executive desk there",
 ];
 
+function formatZoneLabel(zoneId: string): string {
+  const num = zoneId.replace(/\D+/g, "");
+  return num ? `Zone ${num}` : zoneId;
+}
+
 export function VoiceSpatialThread({
   messages,
   pinnedItem,
+  pinnedZone,
   onClearPin,
   onSendUtterance,
   onSelectAlternative,
@@ -62,6 +70,12 @@ export function VoiceSpatialThread({
   const latestWithAlts = [...messages]
     .reverse()
     .find((m) => m.alternatives && m.alternatives.length > 0);
+
+  const scopeChipLabel = pinnedItem
+    ? `@${formatZoneLabel(pinnedItem.zone_id)} · ${pinnedItem.category}`
+    : pinnedZone
+    ? `@${formatZoneLabel(pinnedZone.zone_id)}`
+    : null;
 
   const startMic = () => {
     const win = window as unknown as {
@@ -116,20 +130,20 @@ export function VoiceSpatialThread({
   return (
     <div
       className={`absolute bottom-3 left-3 right-3 z-30 rounded-2xl bg-at-card/95 backdrop-blur-md border border-at-border shadow-xl transition-all duration-300 flex flex-col ${
-        expanded ? "max-h-[42%]" : ""
+        expanded ? "max-h-[44%]" : ""
       }`}
     >
       {expanded && (
         <div className="p-3 border-b border-at-border overflow-y-auto space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-at-accent">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-at-cyan">
               <Sparkles className="h-3.5 w-3.5" />
-              Talk to Swap Furniture
+              Conversational Spatial Thread
             </span>
             <button
               type="button"
               onClick={() => setExpanded(false)}
-              className="p-1 rounded-md hover:bg-at-surface text-at-muted cursor-pointer"
+              className="p-1 rounded-md hover:bg-at-bg text-at-muted cursor-pointer"
             >
               <ChevronDown className="h-4 w-4" />
             </button>
@@ -142,7 +156,7 @@ export function VoiceSpatialThread({
                   key={chip}
                   type="button"
                   onClick={() => handleSubmit(undefined, chip)}
-                  className="px-2.5 py-1 rounded-full bg-at-surface border border-at-border hover:border-at-accent text-[11px] text-at-muted hover:text-at-ink transition-colors cursor-pointer"
+                  className="px-2.5 py-1 rounded-full bg-at-bg border border-at-border hover:border-at-cyan text-[11px] text-at-muted hover:text-at-ink transition-colors cursor-pointer"
                 >
                   &ldquo;{chip}&rdquo;
                 </button>
@@ -172,10 +186,10 @@ export function VoiceSpatialThread({
               {latestWithAlts.alternatives.map((alt) => (
                 <div
                   key={alt.sku_id}
-                  className={`w-56 shrink-0 rounded-xl p-2.5 bg-at-surface border flex flex-col justify-between gap-2 ${
+                  className={`w-60 shrink-0 rounded-xl p-2.5 bg-at-bg border flex flex-col justify-between gap-2 ${
                     alt.hook_blocked
                       ? "border-at-coral/70 bg-at-coral/5"
-                      : "border-at-border hover:border-at-accent"
+                      : "border-at-border hover:border-at-cyan"
                   }`}
                 >
                   <div className="flex gap-2.5">
@@ -206,9 +220,15 @@ export function VoiceSpatialThread({
                   </div>
 
                   {alt.hook_blocked ? (
-                    <div className="px-2 py-1 rounded-md bg-at-coral/15 border border-at-coral/50 text-[10px] font-mono text-at-coral flex items-center gap-1">
-                      <ShieldAlert className="h-3 w-3 shrink-0" />
-                      <span className="truncate">Blocked ({alt.fit_delta_label})</span>
+                    <div
+                      title={alt.block_reason || undefined}
+                      className="px-2 py-1 rounded-md bg-at-coral/15 border border-at-coral/55 text-[10px] font-mono text-at-coral flex items-start gap-1"
+                    >
+                      <ShieldAlert className="h-3 w-3 shrink-0 mt-0.5" />
+                      <span className="leading-tight">
+                        {alt.block_reason ||
+                          `Blocked by hooks.json (${alt.fit_delta_label})`}
+                      </span>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between gap-1.5">
@@ -219,9 +239,9 @@ export function VoiceSpatialThread({
                         type="button"
                         disabled={isSwapping}
                         onClick={() => onSelectAlternative(alt)}
-                        className="px-2.5 py-1 rounded-full bg-at-accent hover:opacity-95 text-white text-[10px] font-semibold disabled:opacity-50 cursor-pointer"
+                        className="px-2.5 py-1 rounded-full bg-at-cyan hover:opacity-95 text-[#0C0D10] text-[10px] font-semibold disabled:opacity-50 cursor-pointer"
                       >
-                        {isSwapping ? "Swapping…" : "Swap"}
+                        {isSwapping ? "Swapping…" : "Surgical Swap"}
                       </button>
                     </div>
                   )}
@@ -232,13 +252,13 @@ export function VoiceSpatialThread({
         </div>
       )}
 
-      {/* Compact Single Horizontal Bar */}
+      {/* Compact Single Horizontal Bar with Live Audio Waveform */}
       <form onSubmit={handleSubmit} className="p-2 flex items-center gap-2">
         <button
           type="button"
           onClick={() => setExpanded((e) => !e)}
-          className="h-8 w-8 rounded-full bg-at-surface border border-at-border flex items-center justify-center text-at-muted hover:text-at-ink shrink-0 cursor-pointer"
-          title="Toggle swap options"
+          className="h-8 w-8 rounded-full bg-at-bg border border-at-border flex items-center justify-center text-at-muted hover:text-at-ink shrink-0 cursor-pointer"
+          title="Toggle spatial thread"
         >
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
         </button>
@@ -250,23 +270,36 @@ export function VoiceSpatialThread({
           onMouseLeave={() => isListening && stopMic()}
           onTouchStart={startMic}
           onTouchEnd={stopMic}
-          className={`h-8 w-8 rounded-full flex items-center justify-center border transition-colors shrink-0 cursor-pointer ${
+          className={`h-8 px-2.5 rounded-full flex items-center gap-1.5 border transition-colors shrink-0 cursor-pointer ${
             isListening
               ? "bg-at-cyan/15 border-at-cyan text-at-cyan"
-              : "bg-at-surface border-at-border text-at-cyan hover:border-at-cyan"
+              : "bg-at-bg border-at-border text-at-cyan hover:border-at-cyan"
           }`}
           title="Hold to speak"
         >
           {micDenied ? (
             <MicOff className="h-3.5 w-3.5 text-at-notice" />
+          ) : isListening ? (
+            <span className="flex items-center gap-0.5 h-3.5 px-0.5">
+              {[0, 1, 2].map((bar) => (
+                <span
+                  key={bar}
+                  className="w-0.5 h-full bg-at-cyan rounded-full animate-datum-wave"
+                  style={{ animationDelay: `${bar * 120}ms` }}
+                />
+              ))}
+            </span>
           ) : (
             <Mic className="h-3.5 w-3.5" />
           )}
+          <span className="hidden sm:inline text-[11px] font-medium">
+            {isListening ? "Listening…" : "Speak"}
+          </span>
         </button>
 
-        {pinnedItem && (
+        {scopeChipLabel && (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-at-cyan/12 border border-at-cyan/40 text-[11px] font-mono text-at-cyan shrink-0">
-            @{pinnedItem.category}
+            {scopeChipLabel}
             <button
               type="button"
               onClick={onClearPin}
@@ -282,14 +315,14 @@ export function VoiceSpatialThread({
           value={input}
           onFocus={() => setExpanded(true)}
           onChange={(e) => setInput(e.target.value)}
-          placeholder='Ask to swap any item (e.g., "Warmer cream chair under $180")'
+          placeholder='Talk to swap (e.g., "Swap chair for warmer cream under $180" or "Put a 72-inch desk there")'
           className="flex-1 bg-transparent text-xs text-at-ink placeholder:text-at-muted focus:outline-none min-w-0"
         />
 
         <button
           type="submit"
           disabled={isSending || !input.trim()}
-          className="h-8 px-3.5 rounded-full bg-at-accent hover:opacity-95 disabled:opacity-40 text-white text-xs font-semibold inline-flex items-center gap-1 shrink-0 cursor-pointer"
+          className="h-8 px-3.5 rounded-full bg-at-cyan hover:opacity-95 disabled:opacity-40 text-[#0C0D10] text-xs font-semibold inline-flex items-center gap-1 shrink-0 cursor-pointer"
         >
           {isSending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />

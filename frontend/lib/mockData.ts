@@ -248,6 +248,12 @@ export function buildMockPipelinePayloads(params: {
         confidence: 0.94,
       },
     ],
+    protected_anchors:
+      params.scope === "upgrade"
+        ? [{ label: "Existing Desk", bbox: [520, 265, 795, 608] }]
+        : [],
+    cross_anchor_skew_pct: 1.4,
+    foreshortening_warning: false,
     skew_warning: null,
     zones: isFullRoom
       ? [
@@ -660,6 +666,7 @@ export const MOCK_BENCHMARK_DATA: BenchmarkData = {
     {
       room_id: "nyu_012",
       room_label: "NYU Study Corner",
+      image_url: makeSunlitRoomSvg({ vibe: "scandi", rendered: true }),
       kinect_gt_width_in: 44.2,
       datum_est_width_in: 43.5,
       error_in: 0.7,
@@ -669,6 +676,73 @@ export const MOCK_BENCHMARK_DATA: BenchmarkData = {
       status: "PASS",
       note: "Outlet + Door cross-check agreed within 2.1%.",
     },
+    {
+      room_id: "nyu_066",
+      room_label: "NYU Narrow Bedroom Nook",
+      image_url: makeSunlitRoomSvg({ vibe: "midcentury", rendered: true }),
+      kinect_gt_width_in: 36.8,
+      datum_est_width_in: 37.9,
+      error_in: 1.1,
+      calibration_layer: "Layer 1 (Anchor)",
+      chosen_sku: '34" Compact Writing Desk',
+      blocked_sku: '42" Desk (DENY)',
+      status: "FAILURE_FIXED",
+      note: 'Caught 30"H regex trap; fixed via gemini-4-hydrogen structured W×D×H parser.',
+    },
+    {
+      room_id: "nyu_104",
+      room_label: "Blank Drywall Alcove",
+      image_url: makeSunlitRoomSvg({ vibe: "minimal", rendered: true }),
+      kinect_gt_width_in: 58.0,
+      datum_est_width_in: 55.2,
+      error_in: 2.8,
+      calibration_layer: "Layer 2 (Depth+EXIF)",
+      chosen_sku: '52" Slim Bookcase + Chair',
+      blocked_sku: null,
+      status: "FALLBACK_PASS",
+      note: 'Zero visible anchors; Depth-Anything-V2 + 26mm EXIF fired cleanly with amber ±3.8" badge.',
+    },
+    {
+      room_id: "malin_01",
+      room_label: "The Malin Chelsea — Nook",
+      image_url: makeSunlitRoomSvg({ vibe: "scandi", rendered: true, multiZone: true }),
+      kinect_gt_width_in: 45.0,
+      datum_est_width_in: 44.1,
+      error_in: 0.9,
+      calibration_layer: "Layer 1 (Anchor)",
+      chosen_sku: 'Garvee 40" Desk + Branch Chair',
+      blocked_sku: '72" Executive Desk (DENY)',
+      status: "PASS",
+      note: "Live venue photo verified against iPhone Measure.",
+    },
   ],
-  failure_audits: [],
+  failure_audits: [
+    {
+      id: "fail-1",
+      title: 'Height-vs-Width Regex Trap ("30\\"H" parsed as width)',
+      room_ref: "nyu_066",
+      what_broke:
+        'Naive regex extracted "30" from "30\\"H x 48\\"W" and allowed an oversized 48" desk into a 36.8" gap.',
+      how_we_fixed_it:
+        "Replaced regex with gemini-4-hydrogen structured W×D×H JSON extraction and flagged omitted specs as amber Unverified Specs.",
+    },
+    {
+      id: "fail-2",
+      title: "Shopify Minor-Unit Cents Pricing ($129.95 read as $12,995)",
+      room_ref: "nyu_019",
+      what_broke:
+        "shop.dev returned integer cents (12995), causing verify_bundle.py to falsely reject every valid cart.",
+      how_we_fixed_it:
+        "Normalized integer cents ÷ 100 inside shop_mcp.py before passing candidates to Managed Agents.",
+    },
+    {
+      id: "fail-3",
+      title: "Perspective Foreshortening on Angled Wall Shots",
+      room_ref: "nyu_088",
+      what_broke:
+        'Single-anchor calibration drifted by 5.2" when the outlet was 4 feet closer to the camera than the target wall.',
+      how_we_fixed_it:
+        "Upgraded to gemini-4-neon xhigh multi-anchor cross-audit flagging >15% inter-anchor skew honestly in the UI.",
+    },
+  ],
 };

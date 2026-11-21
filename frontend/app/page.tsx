@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Compass, Moon, RotateCcw, Sun } from "lucide-react";
+import { Compass, FlaskConical, Moon, RotateCcw, Sun } from "lucide-react";
 import type {
   AlternativeSKUCard,
+  BenchmarkData,
   CartReadyEvent,
   CatalogReadyEvent,
   DemoPreset,
@@ -16,10 +17,11 @@ import type {
   VerifiedCartItem,
 } from "@/types/clearbuy";
 import type { ProcessedRoomImage } from "@/lib/imageUtils";
-import { makeSunlitRoomSvg, type RoomVibe } from "@/lib/mockData";
+import { MOCK_BENCHMARK_DATA } from "@/lib/mockData";
 import {
   DEFAULT_USE_MOCK,
   executeSurgicalSwap,
+  fetchBenchmarkData,
   patchZoneOverride,
   sendThreadUtterance,
   startSessionStream,
@@ -29,11 +31,11 @@ import { RoomCanvas, type CanvasViewMode } from "@/components/RoomCanvas";
 import { GlassBoxRail } from "@/components/GlassBoxRail";
 import { ShopifyCommerceRail } from "@/components/ShopifyCommerceRail";
 import { VoiceSpatialThread } from "@/components/VoiceSpatialThread";
+import { BenchmarkDrawer } from "@/components/BenchmarkDrawer";
 
 export default function DatumStudioPage() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [appPhase, setAppPhase] = useState<"capture" | "studio">("capture");
-  const [selectedVibe, setSelectedVibe] = useState<RoomVibe>("scandi");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
@@ -56,6 +58,7 @@ export default function DatumStudioPage() {
   const [viewMode, setViewMode] = useState<CanvasViewMode>("blueprint");
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const [pinnedItem, setPinnedItem] = useState<VerifiedCartItem | null>(null);
+  const [pinnedZone, setPinnedZone] = useState<DetectedZone | null>(null);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [isRepairing, setIsRepairing] = useState<boolean>(false);
   const [elapsedSec, setElapsedSec] = useState<number>(0);
@@ -66,9 +69,14 @@ export default function DatumStudioPage() {
   const [isSendingThread, setIsSendingThread] = useState<boolean>(false);
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
 
+  // Proof & Benchmark Drawer states (Component F)
+  const [proofOpen, setProofOpen] = useState<boolean>(false);
+  const [benchmarkData, setBenchmarkData] =
+    useState<BenchmarkData>(MOCK_BENCHMARK_DATA);
+
   const abortRef = useRef<AbortController | null>(null);
 
-  // Persist Light / Dark Atelier theme
+  // Persist Darkroom Studio (default) / Light Atelier theme
   useEffect(() => {
     const saved = window.localStorage.getItem("datum-theme");
     if (saved === "dark" || saved === "light") {
@@ -82,7 +90,6 @@ export default function DatumStudioPage() {
     window.localStorage.setItem("datum-theme", theme);
   }, [theme]);
 
-  // Live elapsed timer while pipeline streams
   useEffect(() => {
     if (!isStreaming) return;
     const t0 = performance.now();
@@ -92,31 +99,10 @@ export default function DatumStudioPage() {
     return () => clearInterval(id);
   }, [isStreaming]);
 
-  // Update sunlit preset visuals live when user switches Room Style chip in Studio
-  const handleChangeVibe = (vibe: RoomVibe) => {
-    setSelectedVibe(vibe);
-    if (appPhase === "studio" && activePresetId) {
-      const isFullRoom = activePresetId === "full-living-room";
-      setAngleTabs([
-        {
-          id: "angle-1",
-          label: "Main View",
-          imageUrl: makeSunlitRoomSvg({ vibe, rendered: false, multiZone: isFullRoom }),
-        },
-      ]);
-      setVersions((prev) =>
-        prev.map((ver, idx) => ({
-          ...ver,
-          image_url: makeSunlitRoomSvg({
-            vibe,
-            rendered: true,
-            warmChair: idx > 0,
-            multiZone: isFullRoom,
-          }),
-        }))
-      );
-    }
-  };
+  useEffect(() => {
+    if (!proofOpen) return;
+    fetchBenchmarkData(DEFAULT_USE_MOCK).then(setBenchmarkData);
+  }, [proofOpen]);
 
   const resetToCapture = () => {
     abortRef.current?.abort();
@@ -130,6 +116,7 @@ export default function DatumStudioPage() {
     setActiveVersionId(null);
     setMessages([]);
     setPinnedItem(null);
+    setPinnedZone(null);
     setErrorBanner(null);
     setIsStreaming(false);
     setElapsedSec(0);
@@ -154,6 +141,7 @@ export default function DatumStudioPage() {
     setActiveVersionId(null);
     setMessages([]);
     setPinnedItem(null);
+    setPinnedZone(null);
     setErrorBanner(null);
     setBudgetUsd(payload.budgetUsd);
     setViewMode("blueprint");
@@ -211,14 +199,28 @@ export default function DatumStudioPage() {
             setIsRepairing(true);
             setTimeout(() => setIsRepairing(false), 1200);
           }
-          const finalVersion = payload.preset
-            ? {
-                ...data.version,
-                image_url: payload.preset.rendered_image_url,
-              }
-            : data.version;
-          setVersions([finalVersion]);
-          setActiveVersionId(finalVersion.version_id);
+          // Apply backend hotspot pin coordinates onto cart items when provided
+          if (data.version.hotspot_pins?.length) {
+            setCartData((prev) => {
+              if (!prev) return prev;
+              const pins = data.version.hotspot_pins!;
+              return {
+                ...prev,
+                items: prev.items.map((item) => {
+                  const match = pins.find((p) => p.sku_id === item.sku_id);
+                  return match
+                    ? {
+                        ...item,
+                        pin_number: match.pin_number,
+                        pin_position: { x: match.x_norm, y: match.y_norm },
+                      }
+                    : item;
+                }),
+              };
+            });
+          }
+          setVersions([data.version]);
+          setActiveVersionId(data.version.version_id);
           setViewMode("rendered");
           setIsStreaming(false);
         },
@@ -286,6 +288,45 @@ export default function DatumStudioPage() {
     });
   };
 
+  const handleRerenderVariant = async (item: VerifiedCartItem) => {
+    setIsSwapping(true);
+    try {
+      const res = await executeSurgicalSwap({
+        sessionId: sessionId || "mock",
+        zoneId: item.zone_id,
+        targetItemId: item.item_id,
+        newSkuId: item.sku_id,
+        variantId: item.selected_variant_id,
+        useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
+        currentItems: cartData?.items,
+        nextVersionNumber: versions.length + 1,
+        mockPresetId: activePresetId,
+      });
+
+      if (!res.allowed) {
+        setErrorBanner(res.hook_deny_reason || "Variant blocked by hooks.json");
+        return;
+      }
+
+      if (cartData) {
+        setCartData({
+          ...cartData,
+          items: res.updated_items ?? cartData.items,
+          total_usd: res.updated_total_usd ?? cartData.total_usd,
+          checkouts: res.updated_checkouts ?? cartData.checkouts,
+        });
+      }
+
+      if (res.new_version) {
+        setVersions((prev) => [...prev, res.new_version!]);
+        setActiveVersionId(res.new_version.version_id);
+        setViewMode("rendered");
+      }
+    } finally {
+      setIsSwapping(false);
+    }
+  };
+
   const handleSendUtterance = async (utterance: string) => {
     setIsSendingThread(true);
     setMessages((prev) => [
@@ -294,7 +335,11 @@ export default function DatumStudioPage() {
         id: `u-${Date.now()}`,
         role: "user",
         text: utterance,
-        pinned_chip: pinnedItem ? `@${pinnedItem.category}` : null,
+        pinned_chip: pinnedItem
+          ? `@${pinnedItem.zone_id} · ${pinnedItem.category}`
+          : pinnedZone
+          ? `@${pinnedZone.zone_id}`
+          : null,
         timestamp: Date.now(),
       },
     ]);
@@ -303,10 +348,25 @@ export default function DatumStudioPage() {
       const res = await sendThreadUtterance({
         sessionId: sessionId || "mock",
         utterance,
-        pinnedZoneId: pinnedItem?.zone_id ?? null,
+        pinnedZoneId: pinnedItem?.zone_id ?? pinnedZone?.zone_id ?? null,
         pinnedItemId: pinnedItem?.item_id ?? null,
         useMock: DEFAULT_USE_MOCK || Boolean(activePresetId),
       });
+
+      if (res.executed_swap?.allowed && res.executed_swap.new_version) {
+        const swap = res.executed_swap;
+        if (cartData) {
+          setCartData({
+            ...cartData,
+            items: swap.updated_items ?? cartData.items,
+            total_usd: swap.updated_total_usd ?? cartData.total_usd,
+            checkouts: swap.updated_checkouts ?? cartData.checkouts,
+          });
+        }
+        setVersions((prev) => [...prev, swap.new_version!]);
+        setActiveVersionId(swap.new_version!.version_id);
+        setViewMode("rendered");
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -360,31 +420,26 @@ export default function DatumStudioPage() {
         return;
       }
 
-      if (res.updated_item && cartData) {
+      if (cartData) {
         setCartData({
           ...cartData,
-          items: cartData.items.map((item) =>
-            item.item_id === res.updated_item!.item_id ? res.updated_item! : item
-          ),
+          items:
+            res.updated_items ??
+            (res.updated_item
+              ? cartData.items.map((item) =>
+                  item.item_id === res.updated_item!.item_id
+                    ? res.updated_item!
+                    : item
+                )
+              : cartData.items),
           total_usd: res.updated_total_usd ?? cartData.total_usd,
           checkouts: res.updated_checkouts ?? cartData.checkouts,
         });
       }
 
       if (res.new_version) {
-        const vibeVersion = activePresetId
-          ? {
-              ...res.new_version,
-              image_url: makeSunlitRoomSvg({
-                vibe: selectedVibe,
-                rendered: true,
-                warmChair: true,
-                multiZone: activePresetId === "full-living-room",
-              }),
-            }
-          : res.new_version;
-        setVersions((prev) => [...prev, vibeVersion]);
-        setActiveVersionId(vibeVersion.version_id);
+        setVersions((prev) => [...prev, res.new_version!]);
+        setActiveVersionId(res.new_version.version_id);
         setViewMode("rendered");
       }
 
@@ -393,7 +448,7 @@ export default function DatumStudioPage() {
         {
           id: `swapped-${Date.now()}`,
           role: "assistant",
-          text: `Swapped & verified (${res.new_version?.decisions_qa.latency_ms ?? 176} ms). Saved as ${res.new_version?.version_id ?? "v2"}.`,
+          text: `Surgical swap verified by hooks.json + Decisions QA (${res.new_version?.decisions_qa.latency_ms ?? 176} ms). Saved as ${res.new_version?.version_id ?? "v2"}.`,
           timestamp: Date.now(),
         },
       ]);
@@ -406,6 +461,7 @@ export default function DatumStudioPage() {
     item: VerifiedCartItem,
     promptOverride?: string
   ) => {
+    setPinnedZone(null);
     setPinnedItem(item);
     if (promptOverride) {
       handleSendUtterance(promptOverride);
@@ -423,16 +479,17 @@ export default function DatumStudioPage() {
     null;
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-at-bg text-at-ink overflow-hidden transition-colors duration-300">
-      {/* Ultra-Clean Top 48px Utility Bar: Logo Left · Room Summary Center · ONLY Light/Dark Right */}
-      <header className="h-12 px-5 border-b border-at-border bg-at-card flex items-center justify-between gap-3 shrink-0 z-40">
+    <div className="h-screen w-screen flex flex-col bg-at-bg text-at-ink overflow-hidden transition-colors duration-200">
+      {/* Top 48px Utility Bar (Section 03.A) */}
+      <header className="h-12 px-4 border-b border-at-border bg-at-card flex items-center justify-between gap-3 shrink-0 z-40">
+        {/* Left: Datum Wordmark + New Space */}
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={resetToCapture}
             className="flex items-center gap-2 cursor-pointer"
           >
-            <span className="h-7 w-7 rounded-lg bg-at-accent/15 border border-at-accent/45 flex items-center justify-center text-at-accent">
+            <span className="h-7 w-7 rounded-lg bg-at-cyan/15 border border-at-cyan/50 flex items-center justify-center text-at-cyan">
               <Compass className="h-4 w-4" />
             </span>
             <span className="text-sm font-semibold tracking-[-0.02em] text-at-ink">
@@ -444,72 +501,83 @@ export default function DatumStudioPage() {
             <button
               type="button"
               onClick={resetToCapture}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-surface border border-at-border hover:border-at-accent text-[11px] font-medium text-at-muted hover:text-at-ink cursor-pointer transition-colors"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-bg border border-at-border hover:border-at-cyan text-[11px] font-medium text-at-muted hover:text-at-ink cursor-pointer transition-colors"
             >
               <RotateCcw className="h-3 w-3" />
-              New Room
+              New Space
             </button>
           )}
         </div>
 
-        {/* Center Room & Budget Summary (only when inside Your Room) */}
+        {/* Center: Always-Visible Space Scope Chip + Tabular-Nums Budget Progress Meter */}
         <div className="hidden md:flex items-center gap-2.5">
-          {appPhase === "studio" && (
-            <>
-              <span className="px-2.5 py-1 rounded-lg bg-at-surface border border-at-border text-[11px] font-mono text-at-muted">
-                {scaleData?.scope_label ?? "Measuring Space…"}
-              </span>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-surface border border-at-border text-[11px] font-mono tabular-nums-strict">
-                <span className="text-at-muted">Budget</span>
-                <span
-                  className={
-                    (cartData?.total_usd ?? 0) > budgetUsd
-                      ? "text-at-coral font-semibold"
-                      : "text-at-emerald font-semibold"
-                  }
-                >
-                  ${(cartData?.total_usd ?? 0).toFixed(2)}
-                </span>
-                <span className="text-at-muted">/ ${budgetUsd}</span>
-              </div>
-            </>
-          )}
+          <span className="px-2.5 py-1 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono text-at-muted">
+            {scaleData?.scope_label ??
+              (appPhase === "studio" ? "Calibrating Space…" : "Ready · Any Space")}
+          </span>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono tabular-nums-strict">
+            <span className="text-at-muted">Budget</span>
+            <span
+              className={
+                (cartData?.total_usd ?? 0) > budgetUsd
+                  ? "text-at-coral font-semibold"
+                  : "text-at-emerald font-semibold"
+              }
+            >
+              ${(cartData?.total_usd ?? 0).toFixed(2)}
+            </span>
+            <span className="text-at-muted">/ ${budgetUsd.toFixed(2)}</span>
+          </div>
         </div>
 
-        {/* Far Right: ONLY Light / Dark Mode Toggle */}
-        <button
-          type="button"
-          onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-          className="px-3 py-1.5 rounded-lg bg-at-surface border border-at-border hover:border-at-accent text-xs font-medium text-at-ink inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-          aria-label="Toggle Light or Dark Mode"
-        >
-          {theme === "light" ? (
-            <>
-              <Sun className="h-3.5 w-3.5 text-at-accent" />
-              <span>Light</span>
-            </>
-          ) : (
-            <>
-              <Moon className="h-3.5 w-3.5 text-at-accent" />
-              <span>Dark</span>
-            </>
-          )}
-        </button>
+        {/* Right: Subtle Proof · 14 Rooms Tested Trigger + Light/Dark Toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setProofOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-at-bg hover:border-at-emerald border border-at-border text-[11px] font-mono tabular-nums-strict text-at-ink transition-colors cursor-pointer"
+          >
+            <FlaskConical className="h-3.5 w-3.5 text-at-emerald" />
+            Proof · {benchmarkData.rooms_tested} Rooms Tested
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            className="px-2.5 py-1.5 rounded-lg bg-at-bg border border-at-border hover:border-at-cyan text-xs font-medium text-at-ink inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+            aria-label="Toggle Dark or Light Mode"
+          >
+            {theme === "dark" ? (
+              <>
+                <Moon className="h-3.5 w-3.5 text-at-cyan" />
+                <span className="hidden sm:inline">Dark</span>
+              </>
+            ) : (
+              <>
+                <Sun className="h-3.5 w-3.5 text-at-accent" />
+                <span className="hidden sm:inline">Light</span>
+              </>
+            )}
+          </button>
+        </div>
       </header>
 
-      {/* Main Content: Upload Room Hero OR Your Room Split Studio */}
+      {/* Main Content: Universal Capture OR 64/36 Darkroom Studio */}
       {appPhase === "capture" ? (
-        <CaptureCanvas
-          selectedVibe={selectedVibe}
-          onChangeVibe={handleChangeVibe}
-          onLaunchSession={handleLaunchSession}
-        />
+        <CaptureCanvas onLaunchSession={handleLaunchSession} />
       ) : (
         <main className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
           <section className="relative w-full lg:w-[64%] h-[55%] lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-at-border min-h-0">
             {errorBanner && (
-              <div className="px-4 py-2 bg-at-coral/12 border-b border-at-coral/40 text-xs font-mono text-at-coral">
-                {errorBanner}
+              <div className="px-4 py-2 bg-at-coral/12 border-b border-at-coral/40 text-xs font-mono text-at-coral flex items-center justify-between">
+                <span>{errorBanner}</span>
+                <button
+                  type="button"
+                  onClick={() => setErrorBanner(null)}
+                  className="underline ml-3 cursor-pointer"
+                >
+                  Dismiss
+                </button>
               </div>
             )}
 
@@ -521,12 +589,17 @@ export default function DatumStudioPage() {
               onSelectVersion={setActiveVersionId}
               viewMode={viewMode}
               onChangeViewMode={setViewMode}
-              selectedVibe={selectedVibe}
-              onChangeVibe={handleChangeVibe}
               cartItems={cartData?.items ?? []}
               hoveredItemId={hoveredItemId}
               onHoverItem={setHoveredItemId}
-              onPinItem={(item) => setPinnedItem(item)}
+              onPinItem={(item) => {
+                setPinnedZone(null);
+                setPinnedItem(item);
+              }}
+              onSelectZone={(zone) => {
+                setPinnedItem(null);
+                setPinnedZone(zone);
+              }}
               onOverrideZoneWidth={handleOverrideZoneWidth}
               isRendering={isStreaming}
               isRepairing={isRepairing}
@@ -538,7 +611,11 @@ export default function DatumStudioPage() {
             <VoiceSpatialThread
               messages={messages}
               pinnedItem={pinnedItem}
-              onClearPin={() => setPinnedItem(null)}
+              pinnedZone={pinnedZone}
+              onClearPin={() => {
+                setPinnedItem(null);
+                setPinnedZone(null);
+              }}
               onSendUtterance={handleSendUtterance}
               onSelectAlternative={handleSelectAlternative}
               isSending={isSendingThread}
@@ -553,7 +630,6 @@ export default function DatumStudioPage() {
               hookData={hookData}
               cartData={cartData}
               decisionsQA={activeVersion?.decisions_qa ?? null}
-              budgetUsd={budgetUsd}
               isStreaming={isStreaming}
               elapsedSec={elapsedSec}
             />
@@ -562,14 +638,23 @@ export default function DatumStudioPage() {
               cartData={cartData}
               budgetUsd={budgetUsd}
               isLoading={isStreaming}
+              isSwapping={isSwapping}
               hoveredItemId={hoveredItemId}
               onHoverItem={setHoveredItemId}
               onSelectVariant={handleSelectVariant}
+              onRerenderVariant={handleRerenderVariant}
               onRequestSwapForItem={handleRequestSwapForItem}
             />
           </aside>
         </main>
       )}
+
+      {/* Slide-Over Proof & Benchmark Drawer (Component F) */}
+      <BenchmarkDrawer
+        open={proofOpen}
+        onClose={() => setProofOpen(false)}
+        data={benchmarkData}
+      />
     </div>
   );
 }

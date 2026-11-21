@@ -12,9 +12,14 @@ export interface AnchorDetection {
   confidence: number;
 }
 
+export interface ProtectedAnchor {
+  label: string;
+  bbox: NormalizedBBox;
+}
+
 export interface DetectedZone {
-  zone_id: string; // e.g., "Z1"
-  label: string; // e.g., "Wall Gap" or "Sofa Wall"
+  zone_id: string; // e.g., "Z1" or "zone_1"
+  label: string; // e.g., "Zone 1 · Desk Wall"
   bbox: NormalizedBBox;
   width_in: number;
   depth_in: number;
@@ -26,11 +31,15 @@ export interface DetectedZone {
 export interface ScaleReadyEvent {
   session_id: string;
   detected_scope: SpaceScope;
-  scope_label: string; // e.g., "Single Nook · 1 Zone" or "Full Room · 2 Zones"
+  scope_label: string; // e.g., "Full Room · 2 Zones"
   calibration_layer: "layer1_anchor" | "layer2_depth_exif";
   tolerance_in: number; // 1.5 or 3.8
   exif_focal_mm?: number | null;
+  fallback_badge?: string | null;
   anchors: AnchorDetection[];
+  protected_anchors: ProtectedAnchor[];
+  cross_anchor_skew_pct?: number;
+  foreshortening_warning?: boolean;
   skew_warning?: string | null; // Triggered when multi-anchor disagreement > 15%
   zones: DetectedZone[];
   elapsed_ms: number;
@@ -52,7 +61,7 @@ export interface CatalogCandidate {
 }
 
 export interface CatalogReadyEvent {
-  mcp_calls: string[]; // e.g., ["search_catalog('standing desk')", ...]
+  mcp_calls: string[];
   stores_scanned: number;
   skus_screened: number;
   catalog_gate_ms: number;
@@ -67,7 +76,7 @@ export interface HookTraceEntry {
   decision: HookDecision;
   timestamp: string;
   tool_name: string;
-  summary: string; // e.g., 'DENY 48" desk exceeds 43.5" in Zone 1 gap (needs 2" margin)'
+  summary: string;
   detail?: string;
 }
 
@@ -81,7 +90,7 @@ export interface HookEvent {
 
 export interface ProductVariant {
   variant_id: string;
-  label: string; // e.g., "Warm Oak", "Matte Black"
+  label: string;
   color_hex: string;
   price_usd: number;
   in_stock: boolean;
@@ -122,11 +131,13 @@ export interface MerchantCheckout {
 }
 
 export interface CartReadyEvent {
+  status?: "verified" | "safe_refusal";
+  refusal_reason?: string | null;
   items: VerifiedCartItem[];
   total_usd: number;
   budget_usd: number;
   checkouts: MerchantCheckout[];
-  protocol_steps: string[]; // ["search_catalog", "get_product", "create_checkout"]
+  protocol_steps: string[];
   elapsed_ms: number;
 }
 
@@ -147,6 +158,13 @@ export interface RenderVersion {
   label: string;
   image_url: string;
   decisions_qa: DecisionsQAResult;
+  hotspot_pins?: {
+    pin_number: number;
+    sku_id: string;
+    zone_id: string;
+    x_norm: number;
+    y_norm: number;
+  }[];
   created_at: number;
 }
 
@@ -161,9 +179,9 @@ export interface AlternativeSKUCard {
   title: string;
   merchant: string;
   price_usd: number;
-  price_delta_usd: number; // e.g., -32
+  price_delta_usd: number;
   width_in?: number | null;
-  fit_delta_label: string; // e.g., 'Fits 25" W' or '+28.5" over wall'
+  fit_delta_label: string;
   hook_blocked: boolean;
   block_reason?: string | null;
   image_url: string;
@@ -190,6 +208,7 @@ export interface SwapResponse {
   allowed: boolean;
   hook_deny_reason?: string | null;
   updated_item?: VerifiedCartItem;
+  updated_items?: VerifiedCartItem[];
   updated_checkouts?: MerchantCheckout[];
   updated_total_usd?: number;
   new_version?: RenderVersion;
@@ -222,6 +241,7 @@ export interface AblationRow {
 export interface BenchmarkRoomSample {
   room_id: string;
   room_label: string;
+  image_url?: string;
   kinect_gt_width_in: number;
   datum_est_width_in: number;
   error_in: number;

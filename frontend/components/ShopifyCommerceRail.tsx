@@ -8,6 +8,7 @@ import {
   ExternalLink,
   RefreshCw,
   ShieldAlert,
+  Sparkles,
   Store,
   X,
 } from "lucide-react";
@@ -17,9 +18,11 @@ interface ShopifyCommerceRailProps {
   cartData: CartReadyEvent | null;
   budgetUsd: number;
   isLoading: boolean;
+  isSwapping: boolean;
   hoveredItemId: string | null;
   onHoverItem: (itemId: string | null) => void;
   onSelectVariant: (itemId: string, variantId: string) => void;
+  onRerenderVariant: (item: VerifiedCartItem) => void;
   onRequestSwapForItem: (item: VerifiedCartItem, promptOverride?: string) => void;
 }
 
@@ -27,12 +30,15 @@ export function ShopifyCommerceRail({
   cartData,
   budgetUsd,
   isLoading,
+  isSwapping,
   hoveredItemId,
   onHoverItem,
   onSelectVariant,
+  onRerenderVariant,
   onRequestSwapForItem,
 }: ShopifyCommerceRailProps) {
   const [showUcpModal, setShowUcpModal] = useState(false);
+  const [dirtyVariantItems, setDirtyVariantItems] = useState<Record<string, boolean>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -52,27 +58,22 @@ export function ShopifyCommerceRail({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-at-card">
-      {/* Clean Shopping Header + UCP Inspector */}
-      <div className="px-4 py-2.5 border-b border-at-border flex items-center justify-between gap-2 bg-at-card shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <h2 className="text-sm font-semibold text-at-ink truncate">
-            Your Room Items
-          </h2>
-          {cartData && (
-            <span className="px-2 py-0.5 rounded-full bg-at-surface border border-at-border text-[11px] font-mono text-at-muted">
-              {cartData.items.length} items
-            </span>
-          )}
+      {/* Protocol Status Line (Section 03.B Component D) */}
+      <div className="px-4 py-2 border-b border-at-border flex items-center justify-between gap-2 bg-at-bg/60 shrink-0">
+        <div className="flex items-center gap-1.5 text-[10px] font-mono text-at-muted truncate">
+          <span className="h-1.5 w-1.5 rounded-full bg-at-emerald shrink-0" />
+          <span className="truncate">
+            Shop MCP · search_catalog → get_product → create_checkout
+          </span>
         </div>
         <button
           type="button"
           disabled={!cartData}
           onClick={() => setShowUcpModal(true)}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-surface border border-at-border hover:border-at-cyan text-[10px] font-mono text-at-muted hover:text-at-cyan disabled:opacity-40 shrink-0 cursor-pointer transition-colors"
-          title="Inspect live Shopify GIDs and UCP checkout payloads"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-card border border-at-border hover:border-at-cyan text-[10px] font-mono text-at-cyan disabled:opacity-40 shrink-0 cursor-pointer transition-colors"
         >
           <Code2 className="h-3 w-3" />
-          UCP
+          Inspect UCP Payload &amp; GIDs
         </button>
       </div>
 
@@ -83,7 +84,7 @@ export function ShopifyCommerceRail({
             {[1, 2, 3].map((n) => (
               <div
                 key={n}
-                className="h-32 rounded-xl bg-at-surface border border-at-border p-3 animate-pulse flex gap-3"
+                className="h-32 rounded-xl bg-at-bg border border-at-border p-3 animate-pulse flex gap-3"
               >
                 <div className="h-18 w-18 rounded-lg bg-at-border shrink-0" />
                 <div className="flex-1 space-y-2">
@@ -98,17 +99,18 @@ export function ShopifyCommerceRail({
 
         {cartData?.items.map((item) => {
           const isHovered = hoveredItemId === item.item_id;
+          const needsRerender = Boolean(dirtyVariantItems[item.item_id]);
           return (
             <div
               key={item.item_id}
               onMouseEnter={() => onHoverItem(item.item_id)}
               onMouseLeave={() => onHoverItem(null)}
-              className={`rounded-xl p-3 bg-at-surface border transition-all space-y-2.5 ${
+              className={`rounded-xl p-3 bg-at-bg border transition-all space-y-2.5 ${
                 isHovered
                   ? "border-at-cyan ring-1 ring-at-cyan/30"
                   : item.fit_state === "blocked"
                   ? "border-at-coral/70"
-                  : "border-at-border hover:border-at-accent/60"
+                  : "border-at-border hover:border-at-cyan/50"
               }`}
             >
               <div className="flex gap-3">
@@ -119,7 +121,7 @@ export function ShopifyCommerceRail({
                     alt={item.title}
                     className="h-full w-full object-cover"
                   />
-                  <span className="absolute top-1 left-1 h-5 w-5 rounded-full bg-[#0D0E12]/90 border border-at-cyan text-[10px] font-mono font-bold text-white flex items-center justify-center">
+                  <span className="absolute top-1 left-1 h-5 w-5 rounded-full bg-[#0C0D10]/90 border border-at-cyan text-[10px] font-mono font-bold text-white flex items-center justify-center">
                     {item.pin_number}
                   </span>
                 </div>
@@ -137,7 +139,7 @@ export function ShopifyCommerceRail({
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-at-muted">
                     <span className="inline-flex items-center gap-1">
                       <Store className="h-3 w-3" />
-                      {item.merchant}
+                      Sold by {item.merchant}
                     </span>
                     <span>·</span>
                     <span className="font-mono tabular-nums-strict text-at-emerald">
@@ -156,7 +158,7 @@ export function ShopifyCommerceRail({
                       <>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-notice/12 border border-at-notice/45 text-[10px] font-mono text-at-notice">
                           <AlertTriangle className="h-3 w-3" />
-                          Unverified Specs
+                          Unverified Specs · Check Seller
                         </span>
                         <button
                           type="button"
@@ -166,9 +168,9 @@ export function ShopifyCommerceRail({
                               `Find a verified-size ${item.category.toLowerCase()} alternative`
                             )
                           }
-                          className="px-1.5 py-0.5 rounded bg-at-card border border-at-border hover:border-at-accent text-[10px] font-mono text-at-ink cursor-pointer"
+                          className="px-1.5 py-0.5 rounded bg-at-card border border-at-border hover:border-at-cyan text-[10px] font-mono text-at-ink cursor-pointer"
                         >
-                          Find verified SKU
+                          Find verified-size SKU
                         </button>
                       </>
                     )}
@@ -182,8 +184,8 @@ export function ShopifyCommerceRail({
                 </div>
               </div>
 
-              {/* Finish Swatches + Swap */}
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-at-border">
+              {/* Finish Swatches + 1-Click Re-Render Finish + Swap */}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-at-border flex-wrap">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {item.variants.map((variant) => {
                     const active = variant.variant_id === item.selected_variant_id;
@@ -191,15 +193,21 @@ export function ShopifyCommerceRail({
                       <button
                         key={variant.variant_id}
                         type="button"
-                        onClick={() => onSelectVariant(item.item_id, variant.variant_id)}
+                        onClick={() => {
+                          onSelectVariant(item.item_id, variant.variant_id);
+                          setDirtyVariantItems((prev) => ({
+                            ...prev,
+                            [item.item_id]: true,
+                          }));
+                        }}
                         className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] border transition-colors cursor-pointer ${
                           active
-                            ? "bg-at-card border-at-accent text-at-ink font-medium"
+                            ? "bg-at-card border-at-cyan text-at-ink font-medium"
                             : "bg-transparent border-at-border text-at-muted hover:text-at-ink"
                         }`}
                       >
                         <span
-                          className="h-2.5 w-2.5 rounded-full border border-black/20"
+                          className="h-2.5 w-2.5 rounded-full border border-white/25"
                           style={{ backgroundColor: variant.color_hex }}
                         />
                         {variant.label}
@@ -208,30 +216,50 @@ export function ShopifyCommerceRail({
                   })}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => onRequestSwapForItem(item)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-card border border-at-border hover:border-at-accent text-[10px] font-mono text-at-muted hover:text-at-ink shrink-0 cursor-pointer"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                  Swap
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {needsRerender && (
+                    <button
+                      type="button"
+                      disabled={isSwapping}
+                      onClick={() => {
+                        setDirtyVariantItems((prev) => ({
+                          ...prev,
+                          [item.item_id]: false,
+                        }));
+                        onRerenderVariant(item);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-cyan text-[#0C0D10] text-[10px] font-semibold disabled:opacity-50 cursor-pointer"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      Re-render finish
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => onRequestSwapForItem(item)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-card border border-at-border hover:border-at-cyan text-[10px] font-mono text-at-muted hover:text-at-ink cursor-pointer"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Swap
+                  </button>
+                </div>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Sticky Combined Budget Bar + Per-Merchant Shop Pay Checkout Footer */}
+      {/* Sticky Combined Budget Bar + Checkout All + Per-Merchant UCP + Shop Pay Banner */}
       <div className="border-t border-at-border bg-at-card p-3 space-y-2.5 shrink-0">
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs font-mono tabular-nums-strict">
-            <span className="text-at-muted">Bundle Total</span>
+            <span className="text-at-muted">Verified Bundle Total</span>
             <span className={isOverBudget ? "text-at-coral" : "text-at-emerald"}>
               ${totalUsd.toFixed(2)} / ${budgetUsd.toFixed(2)}
             </span>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-at-surface overflow-hidden">
+          <div className="h-1.5 w-full rounded-full bg-at-bg overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-300 ${
                 isOverBudget ? "bg-at-coral" : "bg-at-emerald"
@@ -243,7 +271,6 @@ export function ShopifyCommerceRail({
 
         {cartData && cartData.checkouts.length > 0 ? (
           <div className="space-y-2">
-            {/* Primary Checkout All CTA */}
             {cartData.checkouts.length > 1 && (
               <button
                 type="button"
@@ -264,7 +291,6 @@ export function ShopifyCommerceRail({
               </button>
             )}
 
-            {/* Compact Individual Per-Merchant UCP Store Pills */}
             <div className="flex flex-wrap gap-1.5">
               {cartData.checkouts.map((chk) => (
                 <a
@@ -275,33 +301,41 @@ export function ShopifyCommerceRail({
                   className={`flex-1 min-w-[110px] h-8 px-2.5 rounded-lg border text-[11px] font-medium flex items-center justify-between gap-1.5 transition-colors ${
                     cartData.checkouts.length === 1
                       ? "bg-at-shop border-at-shop text-white hover:opacity-95"
-                      : "bg-at-surface border-at-border text-at-ink hover:border-at-shop hover:text-at-shop"
+                      : "bg-at-bg border-at-border text-at-ink hover:border-at-shop hover:text-at-shop"
                   }`}
                 >
-                  <span className="truncate">{chk.merchant}</span>
+                  <span className="truncate">Checkout at {chk.merchant}</span>
                   <span className="inline-flex items-center gap-1 font-mono tabular-nums-strict shrink-0">
-                    ${chk.subtotal_usd.toFixed(0)}
+                    ${chk.subtotal_usd.toFixed(2)}
                     <ExternalLink className="h-3 w-3 opacity-75" />
                   </span>
                 </a>
               ))}
             </div>
+
+            {/* Authentic Shop Pay Handoff Banner (Section 03.B Component D) */}
+            <div className="flex items-center justify-center gap-2 pt-0.5 text-[10px] font-mono text-at-muted">
+              <span className="px-1.5 py-0.5 rounded bg-at-shop/15 text-at-shop font-semibold">
+                Shop Pay
+              </span>
+              <span>Native per-merchant Universal Commerce Protocol (UCP) handoff</span>
+            </div>
           </div>
         ) : (
-          <div className="h-9 rounded-xl bg-at-surface border border-at-border flex items-center justify-center text-[11px] font-mono text-at-muted">
-            Verifying fit &amp; budget before checkout…
+          <div className="h-9 rounded-xl bg-at-bg border border-at-border flex items-center justify-center text-[11px] font-mono text-at-muted">
+            Awaiting hooks.json ALLOW before UCP checkout creation…
           </div>
         )}
       </div>
 
-      {/* Inspect UCP Payload Modal */}
+      {/* Inspect UCP Payload & GIDs Modal */}
       {showUcpModal && cartData && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-2xl rounded-2xl bg-at-card border border-at-border shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
             <div className="px-4 py-3 border-b border-at-border flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-at-ink">
-                  Live Shop MCP GIDs &amp; UCP Checkout Payloads
+                  Live Shop MCP GIDs &amp; Per-Merchant UCP Payloads
                 </h3>
                 <p className="text-[11px] font-mono text-at-muted">
                   Direct HTTP JSON-RPC → https://mcp.shop.com/
@@ -310,7 +344,7 @@ export function ShopifyCommerceRail({
               <button
                 type="button"
                 onClick={() => setShowUcpModal(false)}
-                className="p-1.5 rounded-lg hover:bg-at-surface text-at-muted cursor-pointer"
+                className="p-1.5 rounded-lg hover:bg-at-bg text-at-muted cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -319,7 +353,7 @@ export function ShopifyCommerceRail({
               {cartData.items.map((item) => (
                 <div
                   key={item.item_id}
-                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-at-surface border border-at-border"
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-at-bg border border-at-border"
                 >
                   <span className="text-at-ink truncate">{item.title}</span>
                   <span className="text-at-emerald shrink-0 ml-2">
@@ -327,7 +361,7 @@ export function ShopifyCommerceRail({
                   </span>
                 </div>
               ))}
-              <pre className="p-3 rounded-xl bg-at-surface border border-at-border text-at-muted overflow-x-auto">
+              <pre className="p-3 rounded-xl bg-at-bg border border-at-border text-at-muted overflow-x-auto">
                 {JSON.stringify(cartData.checkouts, null, 2)}
               </pre>
             </div>

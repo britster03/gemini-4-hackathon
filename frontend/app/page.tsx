@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Compass, FlaskConical, Moon, RotateCcw, Sun } from "lucide-react";
+import { Compass, Moon, RotateCcw, Sun } from "lucide-react";
 import type {
   AlternativeSKUCard,
   BenchmarkData,
@@ -509,13 +509,18 @@ export default function DatumStudioPage() {
           )}
         </div>
 
-        {/* Center: Always-Visible Space Scope Chip + Tabular-Nums Budget Progress Meter */}
+        {/* Center: Studio Space Scope Chip (hidden on capture screen) */}
         <div className="hidden md:flex items-center gap-2.5">
-          <span className="px-2.5 py-1 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono text-at-muted">
-            {scaleData?.scope_label ??
-              (appPhase === "studio" ? "Calibrating Space…" : "Ready · Any Space")}
-          </span>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono tabular-nums-strict">
+          {appPhase === "studio" && (
+            <span className="px-2.5 py-1 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono text-at-muted">
+              {scaleData?.scope_label ?? "Calibrating Space…"}
+            </span>
+          )}
+        </div>
+
+        {/* Right: Budget Progress + Light/Dark Toggle */}
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono tabular-nums-strict">
             <span className="text-at-muted">Budget</span>
             <span
               className={
@@ -528,18 +533,6 @@ export default function DatumStudioPage() {
             </span>
             <span className="text-at-muted">/ ${budgetUsd.toFixed(2)}</span>
           </div>
-        </div>
-
-        {/* Right: Subtle Proof · 14 Rooms Tested Trigger + Light/Dark Toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setProofOpen(true)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-at-bg hover:border-at-emerald border border-at-border text-[11px] font-mono tabular-nums-strict text-at-ink transition-colors cursor-pointer"
-          >
-            <FlaskConical className="h-3.5 w-3.5 text-at-emerald" />
-            Proof · {benchmarkData.rooms_tested} Rooms Tested
-          </button>
 
           <button
             type="button"
@@ -624,22 +617,13 @@ export default function DatumStudioPage() {
           </section>
 
           <aside className="w-full lg:w-[36%] h-[45%] lg:h-full flex flex-col min-h-0 bg-at-card">
-            <GlassBoxRail
-              scaleData={scaleData}
-              catalogData={catalogData}
-              hookData={hookData}
-              cartData={cartData}
-              decisionsQA={activeVersion?.decisions_qa ?? null}
-              isStreaming={isStreaming}
-              elapsedSec={elapsedSec}
-            />
-
             <ShopifyCommerceRail
               cartData={cartData}
               budgetUsd={budgetUsd}
               isLoading={isStreaming}
               isSwapping={isSwapping}
               hoveredItemId={hoveredItemId}
+              pinnedItemId={pinnedItem?.item_id ?? null}
               onHoverItem={setHoveredItemId}
               onSelectVariant={handleSelectVariant}
               onRerenderVariant={handleRerenderVariant}

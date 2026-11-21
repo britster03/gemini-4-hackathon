@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  Code2,
   ExternalLink,
   RefreshCw,
   ShieldAlert,
@@ -20,6 +19,7 @@ interface ShopifyCommerceRailProps {
   isLoading: boolean;
   isSwapping: boolean;
   hoveredItemId: string | null;
+  pinnedItemId?: string | null;
   onHoverItem: (itemId: string | null) => void;
   onSelectVariant: (itemId: string, variantId: string) => void;
   onRerenderVariant: (item: VerifiedCartItem) => void;
@@ -32,51 +32,43 @@ export function ShopifyCommerceRail({
   isLoading,
   isSwapping,
   hoveredItemId,
+  pinnedItemId,
   onHoverItem,
   onSelectVariant,
   onRerenderVariant,
   onRequestSwapForItem,
 }: ShopifyCommerceRailProps) {
   const [showUcpModal, setShowUcpModal] = useState(false);
+  const [previewItem, setPreviewItem] = useState<VerifiedCartItem | null>(null);
   const [dirtyVariantItems, setDirtyVariantItems] = useState<Record<string, boolean>>({});
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 5000);
-    return () => clearInterval(id);
-  }, []);
+    if (!pinnedItemId) return;
+    cardRefs.current[pinnedItemId]?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }, [pinnedItemId]);
+
+  useEffect(() => {
+    if (!previewItem && !showUcpModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewItem(null);
+        setShowUcpModal(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [previewItem, showUcpModal]);
 
   const totalUsd = cartData?.total_usd ?? 0;
   const budgetPct = Math.min(100, budgetUsd > 0 ? (totalUsd / budgetUsd) * 100 : 0);
   const isOverBudget = totalUsd > budgetUsd;
 
-  const formatFreshness = (epochMs: number) => {
-    const secs = Math.max(1, Math.floor((nowMs - epochMs) / 1000));
-    if (secs < 60) return `Verified ${secs}s ago`;
-    return `Verified ${Math.floor(secs / 60)}m ago`;
-  };
-
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-at-card">
-      {/* Protocol Status Line (Section 03.B Component D) */}
-      <div className="px-4 py-2 border-b border-at-border flex items-center justify-between gap-2 bg-at-bg/60 shrink-0">
-        <div className="flex items-center gap-1.5 text-[10px] font-mono text-at-muted truncate">
-          <span className="h-1.5 w-1.5 rounded-full bg-at-emerald shrink-0" />
-          <span className="truncate">
-            Shop MCP · search_catalog → get_product → create_checkout
-          </span>
-        </div>
-        <button
-          type="button"
-          disabled={!cartData}
-          onClick={() => setShowUcpModal(true)}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-card border border-at-border hover:border-at-cyan text-[10px] font-mono text-at-cyan disabled:opacity-40 shrink-0 cursor-pointer transition-colors"
-        >
-          <Code2 className="h-3 w-3" />
-          Inspect UCP Payload &amp; GIDs
-        </button>
-      </div>
-
       {/* Spacious Scrollable Product Cards */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {isLoading && !cartData && (
@@ -103,10 +95,13 @@ export function ShopifyCommerceRail({
           return (
             <div
               key={item.item_id}
+              ref={(el) => {
+                cardRefs.current[item.item_id] = el;
+              }}
               onMouseEnter={() => onHoverItem(item.item_id)}
               onMouseLeave={() => onHoverItem(null)}
               className={`rounded-xl p-3 bg-at-bg border transition-all space-y-2.5 ${
-                isHovered
+                isHovered || pinnedItemId === item.item_id
                   ? "border-at-cyan ring-1 ring-at-cyan/30"
                   : item.fit_state === "blocked"
                   ? "border-at-coral/70"
@@ -114,51 +109,53 @@ export function ShopifyCommerceRail({
               }`}
             >
               <div className="flex gap-3">
-                <div className="relative h-18 w-18 rounded-lg overflow-hidden border border-at-border bg-at-card shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setPreviewItem(item)}
+                  title="Click to view full product photo"
+                  className="relative h-20 w-20 rounded-xl overflow-hidden border border-at-border hover:border-at-cyan bg-at-card shrink-0 cursor-zoom-in group transition-colors"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={item.image_url}
                     alt={item.title}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
                   />
                   <span className="absolute top-1 left-1 h-5 w-5 rounded-full bg-[#0C0D10]/90 border border-at-cyan text-[10px] font-mono font-bold text-white flex items-center justify-center">
                     {item.pin_number}
                   </span>
-                </div>
+                </button>
 
-                <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex-1 min-w-0 flex flex-col justify-between gap-2">
+                  {/* Top: Title + Price */}
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-xs font-semibold text-at-ink leading-snug line-clamp-2">
+                    <h3 className="text-sm font-semibold text-at-ink leading-snug line-clamp-2">
                       {item.title}
                     </h3>
-                    <span className="text-xs font-mono font-semibold tabular-nums-strict text-at-ink shrink-0">
+                    <span className="text-sm font-mono font-semibold tabular-nums-strict text-at-ink shrink-0">
                       ${item.price_usd.toFixed(2)}
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-at-muted">
-                    <span className="inline-flex items-center gap-1">
-                      <Store className="h-3 w-3" />
-                      Sold by {item.merchant}
+                  {/* Middle: Segregated Store + Fit Badge */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1 text-xs text-at-muted">
+                      <Store className="h-3 w-3 shrink-0" />
+                      <span>{item.merchant}</span>
+                      <span className="text-at-emerald font-medium">· In Stock</span>
                     </span>
-                    <span>·</span>
-                    <span className="font-mono tabular-nums-strict text-at-emerald">
-                      In Stock · {formatFreshness(item.stock_verified_at)}
-                    </span>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                     {item.fit_state === "verified" && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-emerald/12 border border-at-emerald/35 text-[10px] font-mono tabular-nums-strict text-at-emerald">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-at-emerald/10 border border-at-emerald/30 text-[11px] font-mono tabular-nums-strict text-at-emerald">
                         <CheckCircle2 className="h-3 w-3" />
                         {item.fit_label}
                       </span>
                     )}
                     {item.fit_state === "unverified" && (
-                      <>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-notice/12 border border-at-notice/45 text-[10px] font-mono text-at-notice">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-at-notice/10 border border-at-notice/40 text-[11px] text-at-notice">
                           <AlertTriangle className="h-3 w-3" />
-                          Unverified Specs · Check Seller
+                          Check size
                         </span>
                         <button
                           type="button"
@@ -168,14 +165,14 @@ export function ShopifyCommerceRail({
                               `Find a verified-size ${item.category.toLowerCase()} alternative`
                             )
                           }
-                          className="px-1.5 py-0.5 rounded bg-at-card border border-at-border hover:border-at-cyan text-[10px] font-mono text-at-ink cursor-pointer"
+                          className="px-2 py-0.5 rounded-full bg-at-card border border-at-border hover:border-at-cyan text-[11px] text-at-ink cursor-pointer"
                         >
-                          Find verified-size SKU
+                          Find fit
                         </button>
-                      </>
+                      </div>
                     )}
                     {item.fit_state === "blocked" && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-coral/12 border border-at-coral/50 text-[10px] font-mono text-at-coral">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-at-coral/10 border border-at-coral/40 text-[11px] text-at-coral">
                         <ShieldAlert className="h-3 w-3" />
                         {item.fit_label}
                       </span>
@@ -364,6 +361,53 @@ export function ShopifyCommerceRail({
               <pre className="p-3 rounded-xl bg-at-bg border border-at-border text-at-muted overflow-x-auto">
                 {JSON.stringify(cartData.checkouts, null, 2)}
               </pre>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Product Image Lightbox Modal */}
+      {previewItem && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setPreviewItem(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl bg-at-card border border-at-border shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-at-border flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-at-ink truncate">
+                  {previewItem.title}
+                </p>
+                <p className="text-xs text-at-muted">
+                  {previewItem.merchant} · ${previewItem.price_usd.toFixed(2)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewItem(null)}
+                className="p-1.5 rounded-lg hover:bg-at-bg text-at-muted hover:text-at-ink cursor-pointer"
+                aria-label="Close preview"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="bg-at-bg p-6 flex items-center justify-center max-h-[65vh]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewItem.image_url}
+                alt={previewItem.title}
+                className="max-h-[55vh] w-auto max-w-full rounded-xl object-contain shadow-lg"
+              />
+            </div>
+            <div className="px-4 py-3 border-t border-at-border flex items-center justify-between gap-2 text-xs">
+              <span className="font-mono text-at-emerald">
+                {previewItem.fit_label}
+              </span>
+              <span className="text-at-muted">
+                Pin #{previewItem.pin_number} in room
+              </span>
             </div>
           </div>
         </div>

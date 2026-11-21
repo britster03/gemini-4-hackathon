@@ -63,14 +63,14 @@
       "notes": "Nominal 8 in H x 16 in W including 3/8 in mortar joint."
     },
     "us_letter_paper": {
-      "display_name": "US Letter / A4 Sheet",
-      "tier": "code_invariant",
+      "display_name": "US Letter / A4 Sheet (Wall-Posted Only)",
+      "tier": "architectural_variable",
       "height_in": 11.0,
       "width_in": 8.5,
       "preferred_axis": "height",
-      "confidence_weight": 0.95,
-      "intrinsic_uncertainty_in": 1.3,
-      "notes": "Standard 8.5 in x 11.0 in sheet."
+      "confidence_weight": 0.35,
+      "intrinsic_uncertainty_in": 3.5,
+      "notes": "WARNING: Paper lying flat on desks/trays suffers severe perspective foreshortening. Down-weighted unless mounted vertically flat on a wall."
     },
     "kitchen_counter_height": {
       "display_name": "Standard Kitchen Base Countertop",

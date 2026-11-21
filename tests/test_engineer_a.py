@@ -33,6 +33,7 @@ from backend.scale_engine import (
     calibrate_space,
     compute_focal_px_from_35mm,
     compute_multi_anchor_audit,
+    estimate_zone_metric_depth_m,
     recalculate_zone_override,
 )
 from backend.schemas import (
@@ -48,8 +49,10 @@ from backend.spec_parser import (
     cents_to_usd,
     detect_prompt_injection,
     extract_plain_description,
+    fetch_live_shop_mcp_products,
     normalize_shopify_candidates,
     parse_sku_dimensions_batch,
+    screen_candidates_with_decisions,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -568,6 +571,17 @@ def test_exif_focal_px_rotation_invariance_and_caliper_override_under_5ms():
     assert resp.updated_items[0].fit_status == "blocked_by_hook"
 
 
+def test_real_huggingface_depth_anything_v2_metric_model():
+    """Verify the real cached HuggingFace `Depth-Anything-V2-Metric-Indoor-Small-hf` runs on MPS/CPU."""
+    img = make_synthetic_nook_image(width=640, height=480)
+    z_m, engine = estimate_zone_metric_depth_m(
+        img,
+        BBoxPx(x1=150.0, y1=120.0, x2=500.0, y2=420.0),
+    )
+    assert engine == "Depth-Anything-V2-Metric-Indoor-Small"
+    assert 0.3 < z_m < 15.0
+
+
 # ==============================================================================
 # PART 3: Live Gemini 4 API Integration Tests (`GEMINI_API_KEY` from .env.local)
 # ==============================================================================
@@ -789,3 +803,24 @@ async def test_live_solver_self_correction_and_adversarial_swap_and_safe_refusal
     )
     assert refusal_res.status == "safe_refusal"
     assert refusal_res.safe_refusal is not None
+
+
+@pytest.mark.skipif(not HAS_GEMINI_KEY, reason="GEMINI_API_KEY not configured")
+@pytest.mark.asyncio
+async def test_live_random_shopify_mcp_and_decisions_gate():
+    """Fetch live products from mcp.shop.com across diverse categories, parse via Hydrogen, and gate via gemini-decision-1."""
+    raw_sofas = await fetch_live_shop_mcp_products("velvet sofa", limit=2)
+    raw_mirrors = await fetch_live_shop_mcp_products("arched full length mirror", limit=2)
+    combined = raw_sofas + raw_mirrors
+    assert len(combined) >= 2
+
+    parsed_dims = await parse_sku_dimensions_batch(combined)
+    cands = normalize_shopify_candidates(combined, parsed_dims)
+    screened = await screen_candidates_with_decisions(
+        cands,
+        "Warm modern living room with velvet seating and floor mirror",
+    )
+    assert len(screened) == len(combined)
+    assert all(c.sku_id.startswith("gid://shopify/") for c in screened)
+    assert all(c.price_usd > 0 for c in screened)
+    assert any(c.aesthetic_score is not None for c in screened)

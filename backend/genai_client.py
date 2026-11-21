@@ -17,6 +17,8 @@ MODEL_CARBON = "gemini-4-carbon"
 MODEL_ARGON = "gemini-4-argon"
 MODEL_NANO_BANANA = "gemini-nano-banana-2.1"
 MODEL_DECISION = "gemini-decision-1"
+MODEL_TRANSCRIBE = "gemini-3.5-transcribe"
+MODEL_TTS_LITE = "gemini-3.8-flash-lite-tts"
 MANAGED_AGENT_ID = "antigravity-preview-09-2026"
 
 _RETIRED_MODEL_PREFIXES = (

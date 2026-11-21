@@ -41,7 +41,12 @@ from PIL import ExifTags, Image
 from pydantic import BaseModel, Field
 
 from agents.verify_bundle import verify_bundle_dict
-from backend.genai_client import MODEL_NEON, assert_supported_model, get_genai_client
+from backend.genai_client import (
+    MODEL_NEON,
+    MODEL_TRANSCRIBE,
+    assert_supported_model,
+    get_genai_client,
+)
 from backend.schemas import (
     AnchorTier,
     BBox1000,
@@ -263,12 +268,8 @@ def _get_depth_anything_pipeline() -> Any:
     return _DEPTH_PIPELINE_CACHE
 
 
-def estimate_zone_metric_depth_m(
-    pil_img: Image.Image,
-    zone_bbox_px: BBoxPx,
-    optical_fallback_m: float = 2.6,
-) -> Tuple[float, str]:
-    """Return `(median_depth_meters, engine_name)` inside `zone_bbox_px`."""
+def estimate_full_depth_map(pil_img: Image.Image) -> Tuple[Optional[np.ndarray], str]:
+    """Run Depth-Anything-V2-Metric-Indoor-Small once per image and return `(depth_map_m, engine_name)`."""
     pipe = _get_depth_anything_pipeline()
     if pipe is not None:
         try:
@@ -276,19 +277,43 @@ def estimate_zone_metric_depth_m(
             pred = out.get("predicted_depth")
             if pred is not None:
                 arr = pred.detach().cpu().numpy() if hasattr(pred, "detach") else np.asarray(pred)
-                arr = np.squeeze(arr)
-                dh, dw = arr.shape[:2]
-                iw, ih = pil_img.size
-                x1 = max(0, min(dw - 1, int(round((zone_bbox_px.x1 / iw) * dw))))
-                x2 = max(x1 + 1, min(dw, int(round((zone_bbox_px.x2 / iw) * dw))))
-                y1 = max(0, min(dh - 1, int(round((zone_bbox_px.y1 / ih) * dh))))
-                y2 = max(y1 + 1, min(dh, int(round((zone_bbox_px.y2 / ih) * dh))))
-                patch = arr[y1:y2, x1:x2]
-                valid = patch[np.isfinite(patch) & (patch > 0.25) & (patch < 20.0)]
-                if valid.size > 0:
-                    return float(np.median(valid)), "Depth-Anything-V2-Metric-Indoor-Small"
+                return np.squeeze(arr).astype(np.float32), "Depth-Anything-V2-Metric-Indoor-Small"
         except Exception:
             pass
+    return None, "gemini-4-neon-optical-depth"
+
+
+def median_depth_in_bbox(
+    depth_arr: np.ndarray,
+    img_w: int,
+    img_h: int,
+    bbox_px: BBoxPx,
+) -> Optional[float]:
+    """Extract median metric depth (meters) inside a pixel bounding box from a precomputed depth map."""
+    dh, dw = depth_arr.shape[:2]
+    x1 = max(0, min(dw - 1, int(round((bbox_px.x1 / img_w) * dw))))
+    x2 = max(x1 + 1, min(dw, int(round((bbox_px.x2 / img_w) * dw))))
+    y1 = max(0, min(dh - 1, int(round((bbox_px.y1 / img_h) * dh))))
+    y2 = max(y1 + 1, min(dh, int(round((bbox_px.y2 / img_h) * dh))))
+    patch = depth_arr[y1:y2, x1:x2]
+    valid = patch[np.isfinite(patch) & (patch > 0.25) & (patch < 20.0)]
+    if valid.size == 0:
+        return None
+    return float(np.median(valid))
+
+
+def estimate_zone_metric_depth_m(
+    pil_img: Image.Image,
+    zone_bbox_px: BBoxPx,
+    optical_fallback_m: float = 2.6,
+) -> Tuple[float, str]:
+    """Return `(median_depth_meters, engine_name)` inside `zone_bbox_px`."""
+    arr, eng = estimate_full_depth_map(pil_img)
+    if arr is not None:
+        iw, ih = pil_img.size
+        med = median_depth_in_bbox(arr, iw, ih, zone_bbox_px)
+        if med is not None:
+            return med, eng
     return float(optical_fallback_m), "gemini-4-neon-optical-depth"
 
 
@@ -332,8 +357,9 @@ def _resolve_detected_anchors(
             conf_weight = min(0.78, float(raw.confidence_weight))
             label = raw.label
 
-        # Down-weight baseboard anywhere 'baseboard' appears in label to prevent NYC pre-war 6-8" trap
-        if "baseboard" in label.lower() or "molding" in label.lower():
+        # Down-weight baseboard or flat/tray/floor items that suffer perspective tilt foreshortening
+        lower_lbl = label.lower()
+        if any(kw in lower_lbl for kw in ("baseboard", "molding", "tray", "paper", "rug", "floor tile")):
             tier = "architectural_variable"
             conf_weight = min(conf_weight, 0.40)
 
@@ -473,7 +499,7 @@ def calibrate_space_sync(
     prompt: str,
     scope: ScopeMode = "auto",
     exif_focal_mm: Optional[float] = None,
-    thinking_level: str = "xhigh",
+    thinking_level: str = "medium",
     angle_index: int = 0,
     zone_id_offset: int = 0,
     model: str = MODEL_NEON,
@@ -573,7 +599,9 @@ def calibrate_space_sync(
 
     zones: List[SpatialZone] = []
     median_depths: List[float] = []
-    depth_engine_used: Optional[str] = None
+    # Compute Depth-Anything-V2 map once (~0.35s on MPS) to cross-verify anchor plane depth & power Layer 2
+    full_depth_map, detected_depth_eng = estimate_full_depth_map(pil_img)
+    depth_engine_used: Optional[str] = detected_depth_eng if full_depth_map is not None else None
     calibration_layer: Literal[1, 2] = 1 if has_solid_layer1 else 2
 
     for idx, z_raw in enumerate(raw_zones):
@@ -582,8 +610,15 @@ def calibrate_space_sync(
         zb1000 = BBox1000(y_min=z_raw.y_min, x_min=z_raw.x_min, y_max=z_raw.y_max, x_max=z_raw.x_max)
         zbpx = zb1000.to_px(img_w, img_h)
 
+        z_depth_m: Optional[float] = (
+            median_depth_in_bbox(full_depth_map, img_w, img_h, zbpx)
+            if full_depth_map is not None
+            else None
+        )
+        if z_depth_m is not None:
+            median_depths.append(z_depth_m)
+
         if has_solid_layer1 and consensus_px_per_in is not None and primary_anchor is not None:
-            # If foreshortened (>15% skew), prefer same-plane anchor explicitly matched to this zone
             zone_anchor = next(
                 (
                     a for a in anchors
@@ -594,38 +629,72 @@ def calibrate_space_sync(
                 primary_anchor,
             )
             active_rate = zone_anchor.px_per_inch if foreshortened else consensus_px_per_in
-            width_in = round(max(12.0, zbpx.width_px / active_rate), 1)
-            ref_anchor_id = zone_anchor.anchor_id
+            anchor_w_in = zbpx.width_px / active_rate
+            ref_anchor_id: Optional[str] = zone_anchor.anchor_id
 
-            if zone_anchor.tier == "code_invariant" and not foreshortened:
-                z_uncertainty = 1.5
-                z_conf: Literal["high", "medium", "low"] = "high"
+            # 3D Depth-Ratio Plane Correction & Tilted-Anchor Outlier Rejection:
+            # Scale shifts linearly with depth Z (`W_zone = (zone_px / anchor_px_per_in) * (Z_zone / Z_anchor)`).
+            # Note: any global scale factor in Depth-Anything-V2 cancels out in `Z_zone / Z_anchor`!
+            if full_depth_map is not None and z_depth_m is not None:
+                a_depth_m = median_depth_in_bbox(full_depth_map, img_w, img_h, zone_anchor.bbox_px)
+                if a_depth_m is not None and a_depth_m > 0.3:
+                    depth_ratio = max(0.55, min(1.85, z_depth_m / a_depth_m))
+                    if abs(depth_ratio - 1.0) > 0.12:
+                        anchor_w_in = anchor_w_in * depth_ratio
+
+                pinhole_w_in = ((zbpx.width_px * z_depth_m) / f_px) * INCHES_PER_METER
+                rel_diff = abs(anchor_w_in - pinhole_w_in) / max(pinhole_w_in, 12.0)
+
+                if rel_diff > 0.35 and (
+                    foreshortened
+                    or zone_anchor.axis_pixels < 28.0
+                    or zone_anchor.tier != "code_invariant"
+                ):
+                    # Anchor is severely foreshortened/tilted or tiny -> fall back cleanly to Layer 2 Depth+EXIF!
+                    width_in = round(max(12.0, pinhole_w_in), 1)
+                    z_layer: Literal[1, 2] = 2
+                    z_uncertainty = 3.8
+                    z_conf: Literal["high", "medium", "low"] = "medium"
+                    ref_anchor_id = None
+                    if idx == 0:
+                        calibration_layer = 2
+                elif foreshortened or zone_anchor.axis_pixels < 28.0:
+                    width_in = round(max(12.0, 0.50 * anchor_w_in + 0.50 * pinhole_w_in), 1)
+                    z_layer = 1
+                    z_uncertainty = 2.2
+                    z_conf = "medium"
+                else:
+                    width_in = round(max(12.0, anchor_w_in), 1)
+                    z_layer = 1
+                    z_uncertainty = 1.5 if zone_anchor.tier == "code_invariant" else 2.2
+                    z_conf = "high" if zone_anchor.tier == "code_invariant" else "medium"
             else:
-                z_uncertainty = 2.5
-                z_conf = "medium"
-            z_layer: Literal[1, 2] = 1
+                width_in = round(max(12.0, anchor_w_in), 1)
+                z_layer = 1
+                z_uncertainty = 1.5 if (zone_anchor.tier == "code_invariant" and not foreshortened) else 2.2
+                z_conf = "high" if (zone_anchor.tier == "code_invariant" and not foreshortened) else "medium"
         else:
             # Layer 2: Automatic Metric Depth + Camera EXIF Pinhole Math
-            z_depth_m, engine_name = estimate_zone_metric_depth_m(
-                pil_img,
-                zbpx,
-                optical_fallback_m=z_raw.estimated_camera_distance_m,
-            )
-            median_depths.append(z_depth_m)
-            depth_engine_used = engine_name
+            if z_depth_m is None:
+                z_depth_m = float(z_raw.estimated_camera_distance_m)
+                depth_engine_used = "gemini-4-neon-optical-depth"
+                median_depths.append(z_depth_m)
             zone_width_m = (zbpx.width_px * z_depth_m) / f_px
             pinhole_w_in = zone_width_m * INCHES_PER_METER
 
-            # If a variable baseboard anchor was also detected, blend 35% baseboard + 65% pinhole depth
             if primary_anchor is not None and primary_anchor.tier == "architectural_variable":
                 bb_w_in = zbpx.width_px / primary_anchor.px_per_inch
-                width_in = round(max(12.0, 0.65 * pinhole_w_in + 0.35 * bb_w_in), 1)
-                ref_anchor_id = primary_anchor.anchor_id
+                if abs(bb_w_in - pinhole_w_in) / max(pinhole_w_in, 12.0) <= 0.25:
+                    width_in = round(max(12.0, 0.70 * pinhole_w_in + 0.30 * bb_w_in), 1)
+                    ref_anchor_id = primary_anchor.anchor_id
+                else:
+                    width_in = round(max(12.0, pinhole_w_in), 1)
+                    ref_anchor_id = None
             else:
                 width_in = round(max(12.0, pinhole_w_in), 1)
                 ref_anchor_id = None
 
-            z_uncertainty = 3.8 if engine_name == "Depth-Anything-V2-Metric-Indoor-Small" else 4.2
+            z_uncertainty = 3.8 if depth_engine_used == "Depth-Anything-V2-Metric-Indoor-Small" else 4.2
             z_conf = "medium" if not exif_assumed_default else "low"
             z_layer = 2
 
@@ -706,7 +775,7 @@ async def calibrate_space(
     prompt: str,
     scope: ScopeMode = "auto",
     exif_focal_mm: Optional[float] = None,
-    thinking_level: str = "xhigh",
+    thinking_level: str = "medium",
     angle_index: int = 0,
     zone_id_offset: int = 0,
     model: str = MODEL_NEON,
@@ -730,7 +799,7 @@ async def calibrate_workspace(
     prompt: str,
     scope: ScopeMode = "auto",
     exif_focal_mm_list: Optional[Sequence[Optional[float]]] = None,
-    thinking_level: str = "xhigh",
+    thinking_level: str = "medium",
 ) -> List[ScaleCalibrationResult]:
     """Calibrate 1-3 room angles with unified sequential zone IDs (`Z1`, `Z2`, ...)."""
     results: List[ScaleCalibrationResult] = []
@@ -843,3 +912,137 @@ def recalculate_zone_override(
         hook_evaluation=hook_event,
         updated_items=updated_items,
     )
+
+
+# --- Voice Audio Transcription Fallback & Video Walkthrough Stretch Goal ---
+
+
+class _VideoWalkthroughAudit(_VisionSceneAudit):
+    spoken_transcript: str = Field(
+        default="",
+        description="Verbatim spoken furnishing goal & budget extracted from the video's audio track.",
+    )
+    extracted_budget_usd: Optional[float] = Field(
+        default=None,
+        description="Numeric USD budget spoken in the walkthrough, if mentioned.",
+    )
+
+
+def transcribe_spoken_audio_sync(
+    audio_bytes: bytes,
+    mime_type: str = "audio/webm",
+    model: str = MODEL_TRANSCRIBE,
+) -> str:
+    """Server-side speech-to-text fallback (gemini-3.5-transcribe) when browser Web Speech is unavailable."""
+    client = get_genai_client(api_version="v1beta")
+    b64_audio = base64.b64encode(audio_bytes).decode("ascii")
+    interaction = client.interactions.create(
+        model=model,
+        input=[
+            {"type": "audio", "data": b64_audio, "mime_type": mime_type},
+            {"type": "text", "text": "Transcribe the user's spoken room furnishing request and dollar budget accurately."},
+        ],
+    )
+    return (interaction.output_text or "").strip()
+
+
+async def transcribe_spoken_audio(
+    audio_bytes: bytes,
+    mime_type: str = "audio/webm",
+    model: str = MODEL_TRANSCRIBE,
+) -> str:
+    return await asyncio.to_thread(transcribe_spoken_audio_sync, audio_bytes, mime_type, model)
+
+
+def calibrate_video_walkthrough_sync(
+    video_bytes: bytes,
+    mime_type: str = "video/mp4",
+    fallback_prompt: str = "Furnish this space within budget.",
+    frame_width_px: int = 1024,
+    frame_height_px: int = 768,
+    exif_focal_mm: float = DEFAULT_SMARTPHONE_FOCAL_35MM,
+    thinking_level: str = "medium",
+) -> Tuple[str, Optional[float], ScaleCalibrationResult]:
+    """Frontier Upgrade 3 Stretch Goal: Native 5-8s smartphone video+audio walkthrough in one gemini-4-neon pass."""
+    t0 = time.perf_counter()
+    client = get_genai_client(api_version="v1beta")
+    b64_vid = base64.b64encode(video_bytes).decode("ascii")
+    prompt = (
+        _build_vision_prompt(fallback_prompt, "auto")
+        + "\n5. Also extract `spoken_transcript` and `extracted_budget_usd` directly from the walkthrough audio track."
+    )
+    interaction = client.interactions.create(
+        model=MODEL_NEON,
+        input=[
+            {"type": "video", "data": b64_vid, "mime_type": mime_type},
+            {"type": "text", "text": prompt},
+        ],
+        generation_config={"thinking_level": thinking_level},
+        response_format={
+            "type": "text",
+            "mime_type": "application/json",
+            "schema": _VideoWalkthroughAudit.model_json_schema(),
+        },
+    )
+    parsed = _VideoWalkthroughAudit.model_validate_json(interaction.output_text)
+    anchors = _resolve_detected_anchors(parsed.anchors, frame_width_px, frame_height_px)
+    primary, consensus_rate, skew_pct, foreshortened = compute_multi_anchor_audit(anchors)
+    f_px = round(compute_focal_px_from_35mm(exif_focal_mm, frame_width_px, frame_height_px), 2)
+
+    zones: List[SpatialZone] = []
+    for idx, z_raw in enumerate(parsed.zones or []):
+        zb1000 = BBox1000(y_min=z_raw.y_min, x_min=z_raw.x_min, y_max=z_raw.y_max, x_max=z_raw.x_max)
+        zbpx = zb1000.to_px(frame_width_px, frame_height_px)
+        if consensus_rate and primary and primary.tier != "architectural_variable":
+            w_in = round(max(12.0, zbpx.width_px / consensus_rate), 1)
+            layer: Literal[1, 2] = 1
+            unc = 1.8
+        else:
+            w_in = round(max(12.0, ((zbpx.width_px * z_raw.estimated_camera_distance_m) / f_px) * INCHES_PER_METER), 1)
+            layer = 2
+            unc = 3.8
+        d_in = round(max(18.0, w_in * z_raw.depth_to_width_ratio), 1)
+        zones.append(
+            SpatialZone(
+                zone_id=f"Z{idx + 1}",
+                label=z_raw.label,
+                enclosure_type=z_raw.enclosure_type,
+                target_categories=z_raw.target_categories,
+                bbox_1000=zb1000,
+                bbox_px=zbpx,
+                width_in=w_in,
+                depth_in=d_in,
+                lateral_margin_in=z_raw.lateral_margin_in,
+                usable_width_in=round(max(6.0, w_in - z_raw.lateral_margin_in), 1),
+                clearance_type=z_raw.clearance_type,
+                functional_clearance_in=z_raw.functional_clearance_in,
+                calibration_layer=layer,
+                reference_anchor_id=primary.anchor_id if primary else None,
+                uncertainty_in=unc,
+            )
+        )
+
+    cal = ScaleCalibrationResult(
+        scope=parsed.resolved_scope,
+        calibration_layer=1 if (primary and primary.tier != "architectural_variable") else 2,
+        primary_anchor=primary,
+        all_anchors=anchors,
+        zones=zones,
+        px_per_inch=consensus_rate,
+        cross_anchor_skew_pct=skew_pct,
+        foreshortening_flagged=foreshortened,
+        exif_focal_mm=exif_focal_mm,
+        exif_fx_px=f_px,
+        uncertainty_in=max((z.uncertainty_in for z in zones), default=2.0),
+        badge_label=(
+            f"{primary.callout_text} · Video Walkthrough"
+            if primary
+            else f"Video Walkthrough + EXIF {exif_focal_mm:g}mm"
+        ),
+        thinking_level=thinking_level,
+        image_width_px=frame_width_px,
+        image_height_px=frame_height_px,
+        latency_ms=int((time.perf_counter() - t0) * 1000),
+    )
+    return parsed.spoken_transcript or fallback_prompt, parsed.extracted_budget_usd, cal
+

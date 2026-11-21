@@ -1,5 +1,9 @@
+# Local learning notes & diagrams (never commit)
+learning/
+
 # Secrets & Environment Variables (NEVER COMMIT)
 .env
+.env.local
 .env.*
 .env.local
 !.env.example
@@ -12,6 +16,8 @@ service-account*.json
 *.pdf
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
 
 # Python / uv Virtual Environments & Caches
 .venv/
@@ -35,9 +41,13 @@ eval/data/
 eval/tmp/
 *.log
 
-# Node / Next.js (Frontend Teammate Protection)
+# Node / Next.js
 node_modules/
 frontend/node_modules/
 .next/
 frontend/.next/
 out/
+frontend/out/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*

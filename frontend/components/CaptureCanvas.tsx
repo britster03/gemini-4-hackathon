@@ -209,7 +209,7 @@ export function CaptureCanvas({
 
   return (
     <div
-      className="h-[calc(100vh-48px)] w-full bg-architectural-grid overflow-y-auto px-5 py-7"
+      className="h-[calc(100vh-48px)] w-full bg-architectural-grid overflow-y-auto px-6 py-9"
       onDragOver={(e) => {
         e.preventDefault();
         setIsDragging(true);
@@ -227,13 +227,13 @@ export function CaptureCanvas({
         onChange={(e) => handleFiles(e.target.files)}
       />
 
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-[1120px] mx-auto space-y-7">
         {/* Centered Editorial Headline */}
-        <div className="text-center space-y-2 max-w-2xl mx-auto">
-          <h1 className="text-3xl sm:text-4xl font-semibold tracking-[-0.02em] text-at-ink leading-tight">
+        <div className="text-center space-y-2.5 max-w-3xl mx-auto">
+          <h1 className="text-4xl sm:text-5xl font-semibold tracking-[-0.02em] text-at-ink leading-tight">
             See real furniture in your exact room.
           </h1>
-          <p className="text-sm text-at-muted leading-relaxed">
+          <p className="text-base text-at-muted leading-relaxed">
             Upload a photo and tell us what you want. Datum measures your space
             automatically, verifies what physically fits your wall and budget, and
             lets you buy directly from Shopify stores.
@@ -249,16 +249,16 @@ export function CaptureCanvas({
           }`}
         >
           {/* Card Top Strip: Simple View Tabs + Style Chips */}
-          <div className="px-4 py-2.5 border-b border-at-border flex flex-wrap items-center justify-between gap-2">
+          <div className="px-5 py-3 border-b border-at-border flex flex-wrap items-center justify-between gap-2.5">
             {images.length === 0 ? (
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-at-surface border border-at-border text-xs">
+              <div className="flex items-center gap-0.5 p-1 rounded-lg bg-at-surface border border-at-border text-sm">
                 {(["original", "measured", "designed"] as PreviewMode[]).map(
                   (mode) => (
                     <button
                       key={mode}
                       type="button"
                       onClick={() => setPreviewMode(mode)}
-                      className={`px-2.5 py-1 rounded-md font-medium capitalize transition-all cursor-pointer ${
+                      className={`px-3 py-1 rounded-md font-medium capitalize transition-all cursor-pointer ${
                         previewMode === mode
                           ? "bg-at-card text-at-ink shadow-xs"
                           : "text-at-muted hover:text-at-ink"
@@ -270,7 +270,7 @@ export function CaptureCanvas({
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs font-mono text-at-emerald">
+              <div className="flex items-center gap-2 text-sm font-mono text-at-emerald">
                 <span>
                   {images.length}/3 Room Photo{images.length > 1 ? "s" : ""} Ready
                   (1024px)
@@ -283,8 +283,8 @@ export function CaptureCanvas({
               </div>
             )}
 
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[11px] text-at-muted">Style:</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-at-muted">Style:</span>
               {ROOM_VIBES.map((vibe) => {
                 const active = selectedVibe === vibe.id;
                 return (
@@ -292,7 +292,7 @@ export function CaptureCanvas({
                     key={vibe.id}
                     type="button"
                     onClick={() => onChangeVibe(vibe.id)}
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
+                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-all cursor-pointer ${
                       active
                         ? "bg-at-accent text-white border-at-accent"
                         : "bg-at-card text-at-ink border-at-border hover:border-at-accent/60"
@@ -418,14 +418,14 @@ export function CaptureCanvas({
                     onMouseLeave={() => setIsPeeking(false)}
                     onTouchStart={() => setIsPeeking(true)}
                     onTouchEnd={() => setIsPeeking(false)}
-                    className="absolute bottom-3 right-3 px-3 py-1.5 rounded-full text-xs font-medium bg-at-card/90 backdrop-blur border border-at-border text-at-ink shadow-md inline-flex items-center gap-1.5 cursor-pointer select-none"
+                    className="absolute bottom-4 right-4 px-3.5 py-2 rounded-full text-sm font-medium bg-at-card/90 backdrop-blur border border-at-border text-at-ink shadow-md inline-flex items-center gap-2 cursor-pointer select-none"
                   >
-                    <Eye className="h-3.5 w-3.5 text-at-cyan" />
+                    <Eye className="h-4 w-4 text-at-cyan" />
                     Hold to Peek Original
                   </button>
                 )}
 
-                <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-at-card/88 backdrop-blur border border-at-border text-[11px] text-at-muted">
+                <span className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-at-card/88 backdrop-blur border border-at-border text-xs text-at-muted">
                   Interactive Example · Drop your photo anywhere to replace
                 </span>
               </>
@@ -481,17 +481,17 @@ export function CaptureCanvas({
           {/* Unified Single Horizontal Pill Bar (Upload · Speak · Prompt · Budget · Design) */}
           <form
             onSubmit={handleSubmit}
-            className="px-4 py-3 border-t border-at-border bg-at-card space-y-2"
+            className="px-5 py-4 border-t border-at-border bg-at-card space-y-2.5"
           >
-            <div className="flex items-center gap-1.5 rounded-full bg-at-surface border border-at-border p-1.5 pl-2 shadow-xs">
+            <div className="flex items-center gap-2 rounded-full bg-at-surface border border-at-border p-2 pl-2.5 shadow-xs">
               {/* Upload Icon Button */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 title="Upload room photo (or take photo)"
-                className="h-9 px-3 rounded-full bg-at-card border border-at-border hover:border-at-accent text-xs font-medium text-at-ink inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                className="h-11 px-4 rounded-full bg-at-card border border-at-border hover:border-at-accent text-sm font-medium text-at-ink inline-flex items-center gap-2 shrink-0 cursor-pointer transition-colors"
               >
-                <Upload className="h-3.5 w-3.5 text-at-accent" />
+                <Upload className="h-4 w-4 text-at-accent" />
                 <span className="hidden sm:inline">Upload</span>
               </button>
 
@@ -508,7 +508,7 @@ export function CaptureCanvas({
                     ? "Mic unavailable — type your request"
                     : "Hold to speak your request"
                 }
-                className={`h-9 w-9 rounded-full border inline-flex items-center justify-center shrink-0 cursor-pointer transition-all ${
+                className={`h-11 w-11 rounded-full border inline-flex items-center justify-center shrink-0 cursor-pointer transition-all ${
                   isListening
                     ? "bg-at-cyan/15 border-at-cyan text-at-cyan"
                     : "bg-at-card border-at-border hover:border-at-cyan text-at-cyan"
@@ -517,7 +517,7 @@ export function CaptureCanvas({
                 {micDenied ? (
                   <MicOff className="h-4 w-4 text-at-notice" />
                 ) : isListening ? (
-                  <span className="flex items-center gap-0.5 h-3.5">
+                  <span className="flex items-center gap-0.5 h-4">
                     {[0, 1, 2].map((bar) => (
                       <span
                         key={bar}
@@ -531,7 +531,7 @@ export function CaptureCanvas({
                 )}
               </button>
 
-              <div className="h-5 w-px bg-at-border mx-1 shrink-0" />
+              <div className="h-6 w-px bg-at-border mx-1 shrink-0" />
 
               {/* Inline Prompt Input */}
               <input
@@ -539,17 +539,17 @@ export function CaptureCanvas({
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Describe what you want (e.g., Standing desk, chair & warm lamp)"
-                className="flex-1 bg-transparent text-xs sm:text-sm text-at-ink placeholder:text-at-muted focus:outline-none min-w-0 px-1"
+                className="flex-1 bg-transparent text-sm sm:text-base text-at-ink placeholder:text-at-muted focus:outline-none min-w-0 px-1"
               />
 
-              <div className="h-5 w-px bg-at-border mx-1 shrink-0" />
+              <div className="h-6 w-px bg-at-border mx-1 shrink-0" />
 
               {/* Budget Icon + Inline Number */}
               <label
                 title="Maximum budget (USD)"
-                className="h-9 px-2.5 rounded-full bg-at-card border border-at-border inline-flex items-center gap-1 text-xs font-mono tabular-nums-strict text-at-emerald shrink-0"
+                className="h-11 px-3.5 rounded-full bg-at-card border border-at-border inline-flex items-center gap-1 text-sm font-mono tabular-nums-strict text-at-emerald shrink-0"
               >
-                <DollarSign className="h-3.5 w-3.5" />
+                <DollarSign className="h-4 w-4" />
                 <input
                   type="number"
                   min={50}
@@ -557,38 +557,38 @@ export function CaptureCanvas({
                   step={25}
                   value={budgetUsd}
                   onChange={(e) => setBudgetUsd(Number(e.target.value) || 450)}
-                  className="w-12 bg-transparent font-semibold text-at-ink focus:outline-none"
+                  className="w-14 bg-transparent font-semibold text-at-ink focus:outline-none"
                 />
               </label>
 
               {/* Primary Design CTA */}
               <button
                 type="submit"
-                className="h-9 px-4 rounded-full bg-at-accent hover:opacity-95 text-white text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-transform active:scale-95"
+                className="h-11 px-5 rounded-full bg-at-accent hover:opacity-95 text-white text-sm font-semibold inline-flex items-center gap-2 shrink-0 cursor-pointer transition-transform active:scale-95"
               >
                 <span>Design</span>
-                <ArrowRight className="h-3.5 w-3.5" />
+                <ArrowRight className="h-4 w-4" />
               </button>
             </div>
 
-            <p className="text-[11px] text-center text-at-muted">
+            <p className="text-xs text-center text-at-muted">
               No tape measure needed — Datum measures automatically from your photo.
             </p>
           </form>
         </div>
 
         {/* 3 Sample Room Cards Below */}
-        <div className="space-y-2 pb-4">
-          <p className="text-xs font-medium text-center text-at-muted">
+        <div className="space-y-2.5 pb-6">
+          <p className="text-sm font-medium text-center text-at-muted">
             Or try a sample room in one click
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             {DEMO_PRESETS.map((preset) => (
               <button
                 key={preset.id}
                 type="button"
                 onClick={() => handleRunPreset(preset)}
-                className="group text-left rounded-xl p-3 bg-at-card border border-at-border hover:border-at-accent transition-all flex items-center gap-3 shadow-xs cursor-pointer"
+                className="group text-left rounded-xl p-4 bg-at-card border border-at-border hover:border-at-accent transition-all flex items-center gap-3.5 shadow-xs cursor-pointer"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -598,13 +598,13 @@ export function CaptureCanvas({
                     multiZone: preset.scope === "full_room",
                   })}
                   alt={preset.title}
-                  className="h-12 w-16 rounded-lg object-cover border border-at-border shrink-0"
+                  className="h-16 w-20 rounded-lg object-cover border border-at-border shrink-0"
                 />
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-at-ink group-hover:text-at-accent transition-colors truncate">
+                  <p className="text-sm font-semibold text-at-ink group-hover:text-at-accent transition-colors truncate">
                     {preset.title}
                   </p>
-                  <p className="text-[11px] text-at-muted truncate mt-0.5">
+                  <p className="text-xs text-at-muted truncate mt-0.5">
                     {preset.subtitle}
                   </p>
                 </div>

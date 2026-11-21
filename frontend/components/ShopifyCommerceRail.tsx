@@ -52,27 +52,32 @@ export function ShopifyCommerceRail({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-at-card">
-      {/* Compact Shop MCP Protocol Status Line */}
-      <div className="px-3 py-2 border-b border-at-border flex items-center justify-between gap-2 bg-at-surface/70 shrink-0">
-        <div className="flex items-center gap-1.5 text-[10px] font-mono text-at-muted truncate">
-          <span className="h-1.5 w-1.5 rounded-full bg-at-emerald" />
-          <span className="truncate">
-            Live Shopify · search_catalog → get_product → checkout
-          </span>
+      {/* Clean Shopping Header + UCP Inspector */}
+      <div className="px-4 py-2.5 border-b border-at-border flex items-center justify-between gap-2 bg-at-card shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="text-sm font-semibold text-at-ink truncate">
+            Your Room Items
+          </h2>
+          {cartData && (
+            <span className="px-2 py-0.5 rounded-full bg-at-surface border border-at-border text-[11px] font-mono text-at-muted">
+              {cartData.items.length} items
+            </span>
+          )}
         </div>
         <button
           type="button"
           disabled={!cartData}
           onClick={() => setShowUcpModal(true)}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-card border border-at-border hover:border-at-cyan text-[10px] font-mono text-at-cyan disabled:opacity-40 shrink-0 cursor-pointer"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-at-surface border border-at-border hover:border-at-cyan text-[10px] font-mono text-at-muted hover:text-at-cyan disabled:opacity-40 shrink-0 cursor-pointer transition-colors"
+          title="Inspect live Shopify GIDs and UCP checkout payloads"
         >
           <Code2 className="h-3 w-3" />
           UCP
         </button>
       </div>
 
-      {/* Scrollable Product Cards */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-0">
+      {/* Spacious Scrollable Product Cards */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {isLoading && !cartData && (
           <>
             {[1, 2, 3].map((n) => (
@@ -237,24 +242,50 @@ export function ShopifyCommerceRail({
         </div>
 
         {cartData && cartData.checkouts.length > 0 ? (
-          <div className="space-y-1.5">
-            {cartData.checkouts.map((chk) => (
-              <a
-                key={chk.checkout_id}
-                href={chk.continue_url}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full h-9 px-3 rounded-xl bg-at-shop hover:opacity-95 text-white text-xs font-medium flex items-center justify-between transition-opacity shadow-sm"
+          <div className="space-y-2">
+            {/* Primary Checkout All CTA */}
+            {cartData.checkouts.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  cartData.checkouts.forEach((chk) => {
+                    window.open(chk.continue_url, "_blank", "noopener,noreferrer");
+                  });
+                }}
+                className="w-full h-10 px-3.5 rounded-xl bg-at-shop hover:opacity-95 text-white text-xs font-semibold flex items-center justify-between transition-opacity shadow-sm cursor-pointer"
               >
-                <span className="truncate">
-                  Checkout at <span className="font-semibold">{chk.merchant}</span>
+                <span>
+                  Checkout All ({cartData.checkouts.length} Stores) via Shop Pay
                 </span>
                 <span className="inline-flex items-center gap-1.5 font-mono tabular-nums-strict shrink-0">
-                  ${chk.subtotal_usd.toFixed(2)}
+                  ${totalUsd.toFixed(2)}
                   <ExternalLink className="h-3.5 w-3.5" />
                 </span>
-              </a>
-            ))}
+              </button>
+            )}
+
+            {/* Compact Individual Per-Merchant UCP Store Pills */}
+            <div className="flex flex-wrap gap-1.5">
+              {cartData.checkouts.map((chk) => (
+                <a
+                  key={chk.checkout_id}
+                  href={chk.continue_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`flex-1 min-w-[110px] h-8 px-2.5 rounded-lg border text-[11px] font-medium flex items-center justify-between gap-1.5 transition-colors ${
+                    cartData.checkouts.length === 1
+                      ? "bg-at-shop border-at-shop text-white hover:opacity-95"
+                      : "bg-at-surface border-at-border text-at-ink hover:border-at-shop hover:text-at-shop"
+                  }`}
+                >
+                  <span className="truncate">{chk.merchant}</span>
+                  <span className="inline-flex items-center gap-1 font-mono tabular-nums-strict shrink-0">
+                    ${chk.subtotal_usd.toFixed(0)}
+                    <ExternalLink className="h-3 w-3 opacity-75" />
+                  </span>
+                </a>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="h-9 rounded-xl bg-at-surface border border-at-border flex items-center justify-center text-[11px] font-mono text-at-muted">

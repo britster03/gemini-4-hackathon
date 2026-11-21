@@ -676,6 +676,10 @@ export default function DatumStudioPage() {
 
             <ShopifyCommerceRail
               cartData={cartData}
+              scaleData={scaleData}
+              catalogData={catalogData}
+              hookData={hookData}
+              elapsedSec={elapsedSec}
               budgetUsd={budgetUsd}
               isLoading={isStreaming}
               isSwapping={isSwapping}

@@ -4,9 +4,13 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Cpu,
   ExternalLink,
+  Loader2,
   RefreshCw,
+  Ruler,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Store,
   X,
@@ -14,11 +18,18 @@ import {
 import type {
   AlternativeSKUCard,
   CartReadyEvent,
+  CatalogReadyEvent,
+  HookEvent,
+  ScaleReadyEvent,
   VerifiedCartItem,
 } from "@/types/clearbuy";
 
 interface ShopifyCommerceRailProps {
   cartData: CartReadyEvent | null;
+  scaleData?: ScaleReadyEvent | null;
+  catalogData?: CatalogReadyEvent | null;
+  hookData?: HookEvent | null;
+  elapsedSec?: number;
   budgetUsd: number;
   isLoading: boolean;
   isSwapping: boolean;
@@ -33,6 +44,10 @@ interface ShopifyCommerceRailProps {
 
 export function ShopifyCommerceRail({
   cartData,
+  scaleData,
+  catalogData,
+  hookData,
+  elapsedSec = 0,
   budgetUsd,
   isLoading,
   isSwapping,
@@ -122,21 +137,171 @@ export function ShopifyCommerceRail({
       {/* Spacious Scrollable Product Cards */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {isLoading && !cartData && (
-          <>
-            {[1, 2, 3].map((n) => (
-              <div
-                key={n}
-                className="h-32 rounded-xl bg-at-bg border border-at-border p-3 animate-pulse flex gap-3"
-              >
-                <div className="h-18 w-18 rounded-lg bg-at-border shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3.5 w-3/4 rounded bg-at-border" />
-                  <div className="h-3 w-1/2 rounded bg-at-border" />
-                  <div className="h-5 w-2/3 rounded bg-at-border" />
+          <div className="space-y-3">
+            <div className="rounded-xl border border-at-border bg-at-bg p-4 space-y-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="inline-flex items-center gap-2">
+                  <Cpu className="h-4 w-4 text-at-cyan" />
+                  <span className="text-xs font-semibold tracking-tight text-at-ink">
+                    Live Spatial Compiler Pipeline
+                  </span>
                 </div>
+                <span className="text-[11px] font-mono tabular-nums-strict text-at-cyan">
+                  {elapsedSec.toFixed(1)}s
+                </span>
               </div>
-            ))}
-          </>
+
+              {/* Stage 1: Optical Scale Calibration */}
+              <div
+                className={`rounded-lg border p-3 transition-all ${
+                  scaleData
+                    ? "border-at-emerald/35 bg-at-emerald/5"
+                    : "border-at-cyan/50 bg-at-cyan/5"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-semibold text-at-ink">
+                    {scaleData ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-at-emerald shrink-0" />
+                    ) : (
+                      <Loader2 className="h-3.5 w-3.5 text-at-cyan animate-spin shrink-0" />
+                    )}
+                    1. Optical Scale Calibration
+                  </span>
+                  <span className="text-[10px] font-mono text-at-muted">
+                    Gemini 4 Neon · xhigh
+                  </span>
+                </div>
+                {scaleData ? (
+                  <div className="mt-2 space-y-1 text-[11px] font-mono text-at-muted pl-5.5">
+                    {scaleData.anchors.slice(0, 2).map((a) => (
+                      <div key={a.id} className="flex items-center justify-between gap-2">
+                        <span className="truncate">{a.label}</span>
+                        <span className="text-at-emerald shrink-0">
+                          {a.px_per_in.toFixed(1)} px/in
+                        </span>
+                      </div>
+                    ))}
+                    {scaleData.zones[0] && (
+                      <div className="flex items-center justify-between gap-2 text-at-ink font-medium pt-0.5">
+                        <span className="truncate">{scaleData.zones[0].label}</span>
+                        <span className="text-at-cyan shrink-0">
+                          {scaleData.zones[0].width_in.toFixed(1)}&quot; W ×{" "}
+                          {scaleData.zones[0].depth_in.toFixed(1)}&quot; D
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-1.5 text-[11px] text-at-muted leading-relaxed pl-5.5">
+                    Detecting real-world scale anchors (US outlets 4.5&quot; H, baseboards 4.0&quot; H, doors 80&quot; H) and computing usable wall span with zero tape measure…
+                  </p>
+                )}
+              </div>
+
+              {/* Stage 2: Live Shopify Inventory Search */}
+              <div
+                className={`rounded-lg border p-3 transition-all ${
+                  catalogData
+                    ? "border-at-emerald/35 bg-at-emerald/5"
+                    : scaleData
+                    ? "border-at-cyan/50 bg-at-cyan/5"
+                    : "border-at-border bg-at-card/50 opacity-65"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-semibold text-at-ink">
+                    {catalogData ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-at-emerald shrink-0" />
+                    ) : scaleData ? (
+                      <Loader2 className="h-3.5 w-3.5 text-at-cyan animate-spin shrink-0" />
+                    ) : (
+                      <Store className="h-3.5 w-3.5 text-at-muted shrink-0" />
+                    )}
+                    2. Live Shopify Inventory Search
+                  </span>
+                  <span className="text-[10px] font-mono text-at-muted">
+                    Shop MCP · Hydrogen
+                  </span>
+                </div>
+                {catalogData ? (
+                  <p className="mt-1.5 text-[11px] font-mono text-at-emerald pl-5.5">
+                    Screened {catalogData.skus_screened} live Shopify SKUs across{" "}
+                    {catalogData.stores_scanned} merchants ({catalogData.candidates.length} verified candidates)
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[11px] text-at-muted leading-relaxed pl-5.5">
+                    {scaleData
+                      ? "Querying live Shopify merchants, normalizing minor-unit cent prices & parsing exact W×D×H dimensions…"
+                      : "Waiting for calibrated room width to query live Shopify merchants…"}
+                  </p>
+                )}
+              </div>
+
+              {/* Stage 3: Deterministic Fit & Budget Guardrail */}
+              <div
+                className={`rounded-lg border p-3 transition-all ${
+                  hookData
+                    ? "border-at-emerald/35 bg-at-emerald/5"
+                    : catalogData
+                    ? "border-at-cyan/50 bg-at-cyan/5"
+                    : "border-at-border bg-at-card/50 opacity-65"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-semibold text-at-ink">
+                    {hookData ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-at-emerald shrink-0" />
+                    ) : catalogData ? (
+                      <Loader2 className="h-3.5 w-3.5 text-at-cyan animate-spin shrink-0" />
+                    ) : (
+                      <ShieldCheck className="h-3.5 w-3.5 text-at-muted shrink-0" />
+                    )}
+                    3. Fit & Budget Verification
+                  </span>
+                  <span className="text-[10px] font-mono text-at-muted">
+                    hooks.json · &lt;15 ms
+                  </span>
+                </div>
+                {hookData ? (
+                  <p className="mt-1.5 text-[11px] font-mono text-at-emerald pl-5.5">
+                    Verified bundle under ${budgetUsd.toFixed(0)} · {hookData.status.replace("_", " ")} (
+                    {hookData.blocked_count} blocked · {hookData.elapsed_ms} ms)
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[11px] text-at-muted leading-relaxed pl-5.5">
+                    Enforcing hard wall-width fit, 24&quot; chair clearance & strict ${budgetUsd.toFixed(0)} budget cap…
+                  </p>
+                )}
+              </div>
+
+              {/* Stage 4: Photorealistic Render + Visual QA */}
+              <div
+                className={`rounded-lg border p-3 transition-all ${
+                  hookData
+                    ? "border-at-cyan/50 bg-at-cyan/5"
+                    : "border-at-border bg-at-card/50 opacity-65"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-semibold text-at-ink">
+                    {hookData ? (
+                      <Loader2 className="h-3.5 w-3.5 text-at-cyan animate-spin shrink-0" />
+                    ) : (
+                      <Ruler className="h-3.5 w-3.5 text-at-muted shrink-0" />
+                    )}
+                    4. Exact-SKU Render + Visual QA
+                  </span>
+                  <span className="text-[10px] font-mono text-at-muted">
+                    Nano Banana 2.1 + Decisions
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[11px] text-at-muted leading-relaxed pl-5.5">
+                  Compositing exact verified Shopify product photos into your room at honest physical scale & auditing for wall clipping…
+                </p>
+              </div>
+            </div>
+          </div>
         )}
 
         {(cartData?.items ?? [])

@@ -24,14 +24,20 @@ import httpx
 from backend.config import (
     get_genai_client,
     get_model_hydrogen,
+    get_shop_mcp_bearer_token,
     get_shop_mcp_url,
+    get_ucp_agent_profile_url,
     has_live_gemini_credentials,
 )
 from backend.schemas import (
+    BuyerInfo,
+    CheckoutStatus,
     MCPCallTrace,
     MerchantUCPCheckout,
     ProductDimensions,
     ProductVariant,
+    ShippingAddress,
+    ShopPayInstrument,
     ShopifySKU,
 )
 
@@ -155,7 +161,19 @@ def parse_dimensions_labeled_deterministic(title: str, description_plain: str) -
     if height_in is None and h_word:
         height_in = float(h_word.group(1) or h_word.group(2))
 
-    # 2. Explicit 2D surface / tabletop pair: `31.5" x 15.75"` or `48" x 24" desktop`
+    # 2. Title span before category noun (`55 Inch Computer Desk`, `40" Standing Desk`), rejecting H/Height!
+    title_w = re.search(
+        r'\b(\d{2,3}(?:\.\d+)?)\s*(?:"|-inch|\s+inch|\s+in\.?)\s+(?!h\b|high\b|height\b|tall\b)(?:standing\s+|computer\s+|writing\s+|home\s+|office\s+|executive\s+|modern\s+|slim\s+|compact\s+|l-shaped\s+|gaming\s+)*(?:desk|table|sofa|couch|loveseat|bookcase|bookshelf|shelf|console)',
+        title,
+        flags=re.IGNORECASE,
+    )
+    if title_w:
+        tw_val = float(title_w.group(1))
+        if width_in is None or tw_val > width_in:
+            width_in = tw_val
+            matched_snippets.append(title_w.group(0))
+
+    # 3. Explicit 2D surface / tabletop pair: `31.5" x 15.75"` or `48" x 24" desktop`
     if width_in is None:
         pair_in = re.search(
             r'\b(\d{2,3}(?:\.\d+)?)\s*(?:"|in\.?|inch(?:es)?)?\s*[xX×]\s*(\d{2,3}(?:\.\d+)?)\s*(?:"|in\.?|inch(?:es)?)\b',
@@ -167,24 +185,13 @@ def parse_dimensions_labeled_deterministic(title: str, description_plain: str) -
             width_in, depth_in = max(v1, v2), (depth_in or min(v1, v2))
             matched_snippets.append(pair_in.group(0))
 
-    # 3. Rug feet shorthand (`5' x 7'`, `5x7 ft`)
+    # 4. Rug feet shorthand (`5' x 7'`, `5x7 ft`)
     if width_in is None and "rug" in blob.lower():
         rug_ft = re.search(r"\b(\d{1,2})\s*['’]?\s*[xX×]\s*(\d{1,2})\s*(?:ft|feet|['’])\b", blob)
         if rug_ft:
             a, b = float(rug_ft.group(1)) * 12.0, float(rug_ft.group(2)) * 12.0
             width_in, depth_in = max(a, b), min(a, b)
             matched_snippets.append(rug_ft.group(0))
-
-    # 4. Title span before category noun (`40" Standing Desk`, `48 Inch Computer Desk`), rejecting H/Height!
-    if width_in is None:
-        title_w = re.search(
-            r'\b(\d{2}(?:\.\d+)?)\s*(?:"|-inch|\s+inch|\s+in\.?)\s+(?!h\b|high\b|height\b|tall\b)(?:standing\s+|computer\s+|writing\s+|home\s+|office\s+|executive\s+|modern\s+|slim\s+|compact\s+)*(?:desk|table|sofa|couch|loveseat|bookcase|bookshelf|shelf|console)',
-            title,
-            flags=re.IGNORECASE,
-        )
-        if title_w:
-            width_in = float(title_w.group(1))
-            matched_snippets.append(title_w.group(0))
 
     return ProductDimensions(
         width_in=round(width_in, 1) if width_in is not None else None,
@@ -309,6 +316,7 @@ class ShopMCPClient:
         client: httpx.AsyncClient,
         tool_name: str,
         arguments: dict[str, Any],
+        bearer_token: str | None = None,
     ) -> tuple[Any, int]:
         t0 = time.perf_counter()
         payload = {
@@ -329,6 +337,9 @@ class ShopMCPClient:
             "Mcp-Name": tool_name,
             "User-Agent": "ClearBuy-SpatialCompiler/1.0",
         }
+        token = (bearer_token or get_shop_mcp_bearer_token() or "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         resp = await client.post(self.endpoint, json=payload, headers=headers)
         latency_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -681,16 +692,38 @@ class ShopMCPClient:
                         or data.get("checkout_url")
                         or ""
                     )
-                    handlers = (data.get("ucp") or {}).get("payment_handlers") or {}
-                    shop_pay = "dev.shopify.shop_pay" in handlers
+                    handlers_raw = (data.get("ucp") or {}).get("payment_handlers") or {}
+                    payment_handlers = (
+                        list(handlers_raw.keys())
+                        if isinstance(handlers_raw, dict)
+                        else [str(h) for h in handlers_raw]
+                        if isinstance(handlers_raw, list)
+                        else []
+                    )
+                    shop_pay = "dev.shopify.shop_pay" in payment_handlers
 
+                    tax_cents = 0
+                    shipping_cents = 0
+                    total_cents = subtotal_cents
                     # Extract authoritative totals if UCP returned `totals`
                     for tot in data.get("totals") or []:
-                        if isinstance(tot, dict) and tot.get("type") in {"subtotal", "total"}:
-                            tc, tu = normalize_price_to_cents_and_usd(tot.get("amount"))
-                            if tc > 0:
-                                subtotal_cents, subtotal_usd = tc, tu
-                                break
+                        if not isinstance(tot, dict):
+                            continue
+                        ttype = str(tot.get("type") or "").lower()
+                        tc, tu = normalize_price_to_cents_and_usd(tot.get("amount"))
+                        if ttype == "subtotal" and tc > 0:
+                            subtotal_cents, subtotal_usd = tc, tu
+                        elif ttype == "tax" and tc >= 0:
+                            tax_cents = tc
+                        elif ttype in {"shipping", "fulfillment"} and tc >= 0:
+                            shipping_cents = tc
+                        elif ttype == "total" and tc > 0:
+                            total_cents = tc
+                    if total_cents <= 0:
+                        total_cents = subtotal_cents + tax_cents + shipping_cents
+                    total_usd = round(total_cents / 100.0, 2)
+
+                    status_val = self._normalize_ucp_status(data.get("status"))
 
                     if not continue_url:
                         vid_num = re.findall(r"\d{6,}", items[0].selected_variant_gid)
@@ -703,7 +736,9 @@ class ShopMCPClient:
                     raw_preview = {
                         "ucp_version": (data.get("ucp") or {}).get("version", "2026-08-25"),
                         "checkout_id": checkout_id,
+                        "status": status_val,
                         "shop_pay_enabled": shop_pay,
+                        "payment_handlers": payment_handlers,
                         "continue_url": continue_url,
                         "line_count": len(items),
                     }
@@ -724,13 +759,19 @@ class ShopMCPClient:
                             merchant_name=merchant,
                             shop_domain=domain,
                             checkout_id=checkout_id,
+                            status=status_val,
                             line_item_gids=[it.selected_variant_gid for it in items],
                             item_titles=[it.title for it in items],
                             item_count=len(items),
                             subtotal_cents=subtotal_cents,
                             subtotal_usd=subtotal_usd,
+                            tax_cents=tax_cents,
+                            shipping_cents=shipping_cents,
+                            total_cents=total_cents,
+                            total_usd=total_usd,
                             continue_url=continue_url,
                             shop_pay_supported=shop_pay or True,
+                            payment_handlers=payment_handlers,
                             protocol_method=f"ucp/mcp:{tool_name}",
                             raw_ucp_payload=raw_preview,
                         )
@@ -776,6 +817,8 @@ class ShopMCPClient:
                             item_count=len(items),
                             subtotal_cents=subtotal_cents,
                             subtotal_usd=subtotal_usd,
+                            total_cents=subtotal_cents,
+                            total_usd=subtotal_usd,
                             continue_url=fallback_url,
                             shop_pay_supported=True,
                             protocol_method=f"ucp/permalink_fallback:{tool_name}",
@@ -784,3 +827,271 @@ class ShopMCPClient:
                     )
 
         return checkouts, traces
+
+    @staticmethod
+    def _normalize_ucp_status(raw_status: Any) -> CheckoutStatus:
+        val = str(raw_status or "").strip().lower()
+        if val in {
+            "incomplete",
+            "ready_for_complete",
+            "requires_escalation",
+            "completed",
+            "canceled",
+        }:
+            return val  # type: ignore[return-value]
+        if val in {"complete", "paid", "order_placed"}:
+            return "completed"
+        if val in {"cancelled"}:
+            return "canceled"
+        return "incomplete"
+
+    def _merge_ucp_checkout_response(
+        self,
+        data: dict[str, Any],
+        base: MerchantUCPCheckout,
+        tool_name: str,
+    ) -> MerchantUCPCheckout:
+        updated = base.model_copy(deep=True)
+        if data.get("id"):
+            updated.checkout_id = str(data["id"])
+        updated.status = self._normalize_ucp_status(data.get("status") or updated.status)
+
+        continue_url = str(data.get("continue_url") or data.get("checkout_url") or "").strip()
+        if continue_url:
+            updated.continue_url = continue_url
+
+        handlers_raw = (data.get("ucp") or {}).get("payment_handlers") or {}
+        if handlers_raw:
+            payment_handlers = (
+                list(handlers_raw.keys())
+                if isinstance(handlers_raw, dict)
+                else [str(h) for h in handlers_raw]
+                if isinstance(handlers_raw, list)
+                else []
+            )
+            updated.payment_handlers = payment_handlers
+            updated.shop_pay_supported = "dev.shopify.shop_pay" in payment_handlers
+
+        subtotal_cents = updated.subtotal_cents
+        tax_cents = updated.tax_cents
+        shipping_cents = updated.shipping_cents
+        total_cents = updated.total_cents
+        for tot in data.get("totals") or []:
+            if not isinstance(tot, dict):
+                continue
+            ttype = str(tot.get("type") or "").lower()
+            tc, _ = normalize_price_to_cents_and_usd(tot.get("amount"))
+            if ttype == "subtotal" and tc > 0:
+                subtotal_cents = tc
+            elif ttype == "tax" and tc >= 0:
+                tax_cents = tc
+            elif ttype in {"shipping", "fulfillment"} and tc >= 0:
+                shipping_cents = tc
+            elif ttype == "total" and tc > 0:
+                total_cents = tc
+        if total_cents <= 0:
+            total_cents = subtotal_cents + tax_cents + shipping_cents
+
+        updated.subtotal_cents = subtotal_cents
+        updated.subtotal_usd = round(subtotal_cents / 100.0, 2)
+        updated.tax_cents = tax_cents
+        updated.shipping_cents = shipping_cents
+        updated.total_cents = total_cents
+        updated.total_usd = round(total_cents / 100.0, 2)
+
+        order_obj = data.get("order")
+        if isinstance(order_obj, dict):
+            if order_obj.get("id"):
+                updated.order_id = str(order_obj["id"])
+            if order_obj.get("permalink_url") or order_obj.get("status_url"):
+                updated.order_permalink_url = str(
+                    order_obj.get("permalink_url") or order_obj.get("status_url")
+                )
+        elif data.get("order_id"):
+            updated.order_id = str(data["order_id"])
+
+        updated.protocol_method = f"ucp/mcp:{tool_name}"
+        updated.raw_ucp_payload = {
+            "ucp_version": (data.get("ucp") or {}).get("version", "2026-08-25"),
+            "checkout_id": updated.checkout_id,
+            "status": updated.status,
+            "order_id": updated.order_id,
+            "order_permalink_url": updated.order_permalink_url,
+            "continue_url": updated.continue_url,
+            "total_cents": updated.total_cents,
+        }
+        return updated
+
+    async def get_checkout(
+        self,
+        checkout: MerchantUCPCheckout,
+        bearer_token: str | None = None,
+    ) -> tuple[MerchantUCPCheckout, MCPCallTrace]:
+        """Poll live `get_checkout` on `https://mcp.shop.com/` for authoritative order/payment state."""
+        if not checkout.checkout_id.startswith("gid://shopify/Checkout/") or "/local_" in checkout.checkout_id:
+            raise ValueError(
+                f"Cannot query live checkout status for non-live checkout ID '{checkout.checkout_id}'."
+            )
+
+        args: dict[str, Any] = {
+            "shop": checkout.shop_domain,
+            "id": checkout.checkout_id,
+        }
+        async with httpx.AsyncClient(timeout=14.0, follow_redirects=True) as client:
+            data, latency_ms = await self._call_mcp_tool(
+                client, "get_checkout", args, bearer_token=bearer_token
+            )
+            if not isinstance(data, dict):
+                raise RuntimeError("Non-dict get_checkout response from Shopify MCP")
+
+            merged = self._merge_ucp_checkout_response(data, checkout, "get_checkout")
+            trace = MCPCallTrace(
+                call_id=f"ucp_{uuid.uuid4().hex[:6]}",
+                tool_name="get_checkout",
+                endpoint=self.endpoint,
+                arguments=args,
+                status="ok",
+                gids_returned=[g for g in [merged.checkout_id, merged.order_id] if g],
+                latency_ms=latency_ms,
+                raw_preview=merged.raw_ucp_payload,
+            )
+            return merged, trace
+
+    async def prepare_checkout_for_completion(
+        self,
+        checkout: MerchantUCPCheckout,
+        buyer: BuyerInfo | None = None,
+        shipping_address: ShippingAddress | None = None,
+        fulfillment_option_id: str | None = None,
+        bearer_token: str | None = None,
+    ) -> tuple[MerchantUCPCheckout, MCPCallTrace]:
+        """Attach buyer contact & shipping address via live `update_checkout` to fetch final totals."""
+        if not checkout.checkout_id.startswith("gid://shopify/Checkout/") or "/local_" in checkout.checkout_id:
+            raise ValueError(
+                f"Cannot prepare live checkout for non-live checkout ID '{checkout.checkout_id}'."
+            )
+
+        checkout_payload: dict[str, Any] = {
+            "context": {"address_country": "US", "currency": checkout.currency or "USD"},
+        }
+        if buyer is not None:
+            buyer_dict: dict[str, Any] = {"email": buyer.email}
+            if buyer.first_name:
+                buyer_dict["first_name"] = buyer.first_name
+            if buyer.last_name:
+                buyer_dict["last_name"] = buyer.last_name
+            if buyer.phone_number:
+                buyer_dict["phone_number"] = buyer.phone_number
+            checkout_payload["buyer"] = buyer_dict
+
+        if shipping_address is not None:
+            dest: dict[str, Any] = {
+                "street_address": shipping_address.address1,
+                "address_locality": shipping_address.city,
+                "address_region": shipping_address.province_code,
+                "postal_code": shipping_address.postal_code,
+                "address_country": shipping_address.country_code,
+            }
+            if shipping_address.address2:
+                dest["extended_address"] = shipping_address.address2
+            method_obj: dict[str, Any] = {
+                "type": "shipping",
+                "destinations": [dest],
+            }
+            if fulfillment_option_id:
+                method_obj["selected_option_id"] = fulfillment_option_id
+            checkout_payload["fulfillment"] = {"methods": [method_obj]}
+
+        args: dict[str, Any] = {
+            "shop": checkout.shop_domain,
+            "id": checkout.checkout_id,
+            "meta": {
+                "ucp-agent": {"profile": get_ucp_agent_profile_url()},
+            },
+            "checkout": checkout_payload,
+        }
+
+        async with httpx.AsyncClient(timeout=14.0, follow_redirects=True) as client:
+            data, latency_ms = await self._call_mcp_tool(
+                client, "update_checkout", args, bearer_token=bearer_token
+            )
+            if not isinstance(data, dict):
+                raise RuntimeError("Non-dict update_checkout response from Shopify MCP")
+
+            merged = self._merge_ucp_checkout_response(data, checkout, "update_checkout")
+            trace = MCPCallTrace(
+                call_id=f"ucp_{uuid.uuid4().hex[:6]}",
+                tool_name="update_checkout",
+                endpoint=self.endpoint,
+                arguments=args,
+                status="ok",
+                gids_returned=[merged.checkout_id, *merged.line_item_gids],
+                latency_ms=latency_ms,
+                raw_preview=merged.raw_ucp_payload,
+            )
+            return merged, trace
+
+    async def complete_checkout(
+        self,
+        checkout: MerchantUCPCheckout,
+        idempotency_key: str,
+        payment_instrument: ShopPayInstrument,
+        bearer_token: str | None = None,
+    ) -> tuple[MerchantUCPCheckout, MCPCallTrace]:
+        """Execute a LIVE, non-simulated `complete_checkout` via `dev.shopify.shop_pay`."""
+        if not checkout.checkout_id.startswith("gid://shopify/Checkout/") or "/local_" in checkout.checkout_id:
+            raise ValueError(
+                f"Refusing to complete non-live checkout ID '{checkout.checkout_id}'. "
+                "A live Shopify UCP checkout session is required."
+            )
+
+        args: dict[str, Any] = {
+            "shop": checkout.shop_domain,
+            "meta": {
+                "ucp-agent": {"profile": get_ucp_agent_profile_url()},
+                "idempotency-key": idempotency_key,
+            },
+            "id": checkout.checkout_id,
+            "checkout": {
+                "payment": {
+                    "instruments": [
+                        {
+                            "id": f"instr_{uuid.uuid4().hex[:8]}",
+                            "handler_id": payment_instrument.handler_id,
+                            "type": payment_instrument.type,
+                            "selected": True,
+                            "credential": {
+                                "type": "shop_token",
+                                "token": payment_instrument.shop_token,
+                            },
+                        }
+                    ]
+                }
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            data, latency_ms = await self._call_mcp_tool(
+                client, "complete_checkout", args, bearer_token=bearer_token
+            )
+            if not isinstance(data, dict):
+                raise RuntimeError("Non-dict complete_checkout response from Shopify MCP")
+
+            merged = self._merge_ucp_checkout_response(data, checkout, "complete_checkout")
+            # Redact raw shop_token before storing trace arguments
+            redacted_args = json.loads(json.dumps(args))
+            for inst in redacted_args.get("checkout", {}).get("payment", {}).get("instruments", []):
+                if isinstance(inst, dict) and isinstance(inst.get("credential"), dict):
+                    inst["credential"]["token"] = "***REDACTED***"
+
+            trace = MCPCallTrace(
+                call_id=f"ucp_{uuid.uuid4().hex[:6]}",
+                tool_name="complete_checkout",
+                endpoint=self.endpoint,
+                arguments=redacted_args,
+                status="ok",
+                gids_returned=[g for g in [merged.checkout_id, merged.order_id] if g],
+                latency_ms=latency_ms,
+                raw_preview=merged.raw_ucp_payload,
+            )
+            return merged, trace

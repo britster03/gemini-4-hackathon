@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import importlib
 import json
@@ -125,28 +126,13 @@ def _call_neon_vision_json(
     image_bytes: bytes,
     mime_type: str,
     prompt_text: str,
-    thinking_level: str = "xhigh",
+    thinking_level: str = "low",
 ) -> dict[str, Any]:
-    """Call `gemini-4-neon` via Interactions API (with `models.generate_content` fallback)."""
+    """Call `gemini-4-neon` with structured JSON output and configurable `thinking_level`."""
     client = get_genai_client()
     model_name = get_model_neon()
-    b64_img = base64.b64encode(image_bytes).decode("utf-8")
 
     try:
-        interaction = client.interactions.create(
-            model=model_name,
-            input=[
-                {"type": "text", "text": prompt_text},
-                {"type": "image", "data": b64_img, "mime_type": mime_type},
-            ],
-            generation_config={
-                "thinking_level": thinking_level,
-                "max_output_tokens": 8192,
-            },
-        )
-        raw_text = getattr(interaction, "output_text", "") or str(interaction)
-        return _extract_json_block(raw_text)
-    except Exception:
         from google.genai import types
 
         resp = client.models.generate_content(
@@ -157,9 +143,25 @@ def _call_neon_vision_json(
             ],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
+                thinking_config=types.ThinkingConfig(thinking_level=thinking_level),  # type: ignore[arg-type]
             ),
         )
         return _extract_json_block(resp.text or "{}")
+    except Exception:
+        b64_img = base64.b64encode(image_bytes).decode("utf-8")
+        interaction = client.interactions.create(
+            model=model_name,
+            input=[
+                {"type": "text", "text": prompt_text},
+                {"type": "image", "data": b64_img, "mime_type": mime_type},
+            ],
+            generation_config={
+                "thinking_level": thinking_level,
+                "max_output_tokens": 4096,
+            },
+        )
+        raw_text = getattr(interaction, "output_text", "") or str(interaction)
+        return _extract_json_block(raw_text)
 
 
 async def run_scale_calibration(
@@ -238,11 +240,15 @@ Rules:
 - If furnishing a full room, segment into 2-3 non-overlapping zones (`zone_1`, `zone_2`, `zone_3`) and assign `target_categories` cleanly across zones.
 """
         try:
-            parsed = _call_neon_vision_json(
-                image_bytes=image_bytes,
-                mime_type=mime_type,
-                prompt_text=neon_prompt,
-                thinking_level=thinking_level,
+            parsed = await asyncio.wait_for(
+                asyncio.to_thread(
+                    _call_neon_vision_json,
+                    image_bytes,
+                    mime_type,
+                    neon_prompt,
+                    thinking_level,
+                ),
+                timeout=22.0,
             )
             return _compute_scale_from_neon_payload(
                 session_id=session_id,

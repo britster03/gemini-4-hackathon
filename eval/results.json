@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-11-21T17:17:04.039934+00:00",
-  "live_gemini_mode": false,
+  "generated_at": "2026-11-21T17:56:45.452783+00:00",
+  "live_gemini_mode": true,
   "rooms_tested": 14,
-  "elapsed_sec": 1.73,
+  "elapsed_sec": 158.36,
   "three_way_comparison": [
     {
       "system": "Baseline A \u00b7 1-Shot Multimodal LLM",
@@ -28,11 +28,15 @@
   ],
   "thinking_level_ablation": {
     "model": "gemini-4-neon",
-    "neon_low_scale_mae_in": 66.2,
-    "neon_xhigh_scale_mae_in": 38.66,
-    "mae_improvement_pct": 41.6,
+    "neon_low_scale_mae_in": 38.66,
+    "neon_xhigh_scale_mae_in": 34.45,
+    "mae_improvement_pct": 10.9,
+    "decisions_qa_clean_pass_pct": 100.0,
     "decisions_qa_catch_rate_pct": 100.0,
-    "decisions_qa_median_latency_ms": 1
+    "decisions_qa_median_latency_ms": 1633,
+    "decisions_catalog_gate_candidates": 55,
+    "decisions_catalog_gate_median_ms": 769,
+    "decisions_output_tokens": 0
   },
   "where_it_still_breaks": [
     {
@@ -78,11 +82,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Tribesigns 55 Inch Computer Desk with Storage Shelves, Rustic Office Desk with Drawers",
-        "merchant": "Tribesigns",
-        "price_usd": 189.99,
-        "width_in": 23.6,
-        "gid": "gid://shopify/p/1mmCc4PdO9zAijSGp9Wd19"
+        "title": "Modern Minimalist Computer Desk \u2013 Multi-Purpose Writing, Study, and Gaming Table with Round Legs, Space-Saving Home Office Desk for Bedroom or Apartment",
+        "merchant": "Kikbo",
+        "price_usd": 39.99,
+        "width_in": 31.5,
+        "gid": "gid://shopify/p/44pdSHfUYjn4Zo2FvhrgTV"
       },
       "blocked_sku_example": null
     },
@@ -128,11 +132,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Tribesigns 55 Inch Computer Desk with Storage Shelves, Rustic Office Desk with Drawers",
-        "merchant": "Tribesigns",
-        "price_usd": 189.99,
-        "width_in": 23.6,
-        "gid": "gid://shopify/p/1mmCc4PdO9zAijSGp9Wd19"
+        "title": "L-Shaped Corner Computer Desk with Storage Pocket | Wooden Home Office / Gaming",
+        "merchant": "2Dropme",
+        "price_usd": 120.0,
+        "width_in": null,
+        "gid": "gid://shopify/p/6JltHPLXIyXwEsaxhk1Lzh"
       },
       "blocked_sku_example": null
     },
@@ -153,11 +157,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Onyx, Ergonomic Office Chair",
-        "merchant": "Eureka Ergonomic",
-        "price_usd": 139.0,
-        "width_in": null,
-        "gid": "gid://shopify/p/tqs9lNBX61iP9Fom9tvzi"
+        "title": "Garvee Ergonomic Office Chair - Mesh Back, Retractable Footrest, Adjustable 3D/4D Armrests, High Back Lumbar Support, Headrest, 145\u00b0 Recline, Breathable Fabric, Rolling Wheels - Black",
+        "merchant": "GARVEE",
+        "price_usd": 158.99,
+        "width_in": 26.0,
+        "gid": "gid://shopify/p/5mEA6yKCP4BjNe1B6nT3Yn"
       },
       "blocked_sku_example": null
     },
@@ -178,11 +182,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Tribesigns 55 Inch Computer Desk with Storage Shelves, Rustic Office Desk with Drawers",
-        "merchant": "Tribesigns",
-        "price_usd": 189.99,
-        "width_in": 23.6,
-        "gid": "gid://shopify/p/1mmCc4PdO9zAijSGp9Wd19"
+        "title": "Modern Minimalist Computer Desk \u2013 Multi-Purpose Writing, Study, and Gaming Table with Round Legs, Space-Saving Home Office Desk for Bedroom or Apartment",
+        "merchant": "Kikbo",
+        "price_usd": 39.99,
+        "width_in": 31.5,
+        "gid": "gid://shopify/p/44pdSHfUYjn4Zo2FvhrgTV"
       },
       "blocked_sku_example": null
     },
@@ -228,11 +232,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Tribesigns 55 Inch Computer Desk with Storage Shelves, Rustic Office Desk with Drawers",
-        "merchant": "Tribesigns",
-        "price_usd": 189.99,
-        "width_in": 23.6,
-        "gid": "gid://shopify/p/1mmCc4PdO9zAijSGp9Wd19"
+        "title": "L-Shaped Corner Computer Desk with Storage Pocket | Wooden Home Office / Gaming",
+        "merchant": "2Dropme",
+        "price_usd": 120.0,
+        "width_in": null,
+        "gid": "gid://shopify/p/6JltHPLXIyXwEsaxhk1Lzh"
       },
       "blocked_sku_example": null
     },
@@ -253,11 +257,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Onyx, Ergonomic Office Chair",
-        "merchant": "Eureka Ergonomic",
-        "price_usd": 139.0,
-        "width_in": null,
-        "gid": "gid://shopify/p/tqs9lNBX61iP9Fom9tvzi"
+        "title": "Garvee Ergonomic Office Chair - Mesh Back, Retractable Footrest, Adjustable 3D/4D Armrests, High Back Lumbar Support, Headrest, 145\u00b0 Recline, Breathable Fabric, Rolling Wheels - Black",
+        "merchant": "GARVEE",
+        "price_usd": 158.99,
+        "width_in": 26.0,
+        "gid": "gid://shopify/p/5mEA6yKCP4BjNe1B6nT3Yn"
       },
       "blocked_sku_example": null
     },
@@ -278,11 +282,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Tribesigns 55 Inch Computer Desk with Storage Shelves, Rustic Office Desk with Drawers",
-        "merchant": "Tribesigns",
-        "price_usd": 189.99,
-        "width_in": 23.6,
-        "gid": "gid://shopify/p/1mmCc4PdO9zAijSGp9Wd19"
+        "title": "Modern Minimalist Computer Desk \u2013 Multi-Purpose Writing, Study, and Gaming Table with Round Legs, Space-Saving Home Office Desk for Bedroom or Apartment",
+        "merchant": "Kikbo",
+        "price_usd": 39.99,
+        "width_in": 31.5,
+        "gid": "gid://shopify/p/44pdSHfUYjn4Zo2FvhrgTV"
       },
       "blocked_sku_example": null
     },
@@ -328,11 +332,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Tribesigns 55 Inch Computer Desk with Storage Shelves, Rustic Office Desk with Drawers",
-        "merchant": "Tribesigns",
-        "price_usd": 189.99,
-        "width_in": 23.6,
-        "gid": "gid://shopify/p/1mmCc4PdO9zAijSGp9Wd19"
+        "title": "L-Shaped Corner Computer Desk with Storage Pocket | Wooden Home Office / Gaming",
+        "merchant": "2Dropme",
+        "price_usd": 120.0,
+        "width_in": null,
+        "gid": "gid://shopify/p/6JltHPLXIyXwEsaxhk1Lzh"
       },
       "blocked_sku_example": null
     },
@@ -353,11 +357,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Onyx, Ergonomic Office Chair",
-        "merchant": "Eureka Ergonomic",
-        "price_usd": 139.0,
-        "width_in": null,
-        "gid": "gid://shopify/p/tqs9lNBX61iP9Fom9tvzi"
+        "title": "Garvee Ergonomic Office Chair - Mesh Back, Retractable Footrest, Adjustable 3D/4D Armrests, High Back Lumbar Support, Headrest, 145\u00b0 Recline, Breathable Fabric, Rolling Wheels - Black",
+        "merchant": "GARVEE",
+        "price_usd": 158.99,
+        "width_in": 26.0,
+        "gid": "gid://shopify/p/5mEA6yKCP4BjNe1B6nT3Yn"
       },
       "blocked_sku_example": null
     },
@@ -378,11 +382,11 @@
       "clearbuy_passed_gt": true,
       "safe_refusal": false,
       "chosen_sku": {
-        "title": "Tribesigns 55 Inch Computer Desk with Storage Shelves, Rustic Office Desk with Drawers",
-        "merchant": "Tribesigns",
-        "price_usd": 189.99,
-        "width_in": 23.6,
-        "gid": "gid://shopify/p/1mmCc4PdO9zAijSGp9Wd19"
+        "title": "Modern Minimalist Computer Desk \u2013 Multi-Purpose Writing, Study, and Gaming Table with Round Legs, Space-Saving Home Office Desk for Bedroom or Apartment",
+        "merchant": "Kikbo",
+        "price_usd": 39.99,
+        "width_in": 31.5,
+        "gid": "gid://shopify/p/44pdSHfUYjn4Zo2FvhrgTV"
       },
       "blocked_sku_example": null
     },

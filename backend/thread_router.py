@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import uuid
 from typing import Any, Callable, Awaitable
 
 from backend.adapters import (
@@ -28,7 +29,12 @@ from backend.config import (
     has_live_gemini_credentials,
 )
 from backend.schemas import (
+    CheckoutCompleteRequest,
+    CheckoutCompleteResponse,
+    CheckoutPrepareRequest,
+    CheckoutPrepareResponse,
     ProductDimensions,
+    ShopPayInstrument,
     ShopifySKU,
     SwapRequest,
     SwapResponse,
@@ -222,12 +228,124 @@ Return ONLY JSON:
         return base_intent
 
 
+PURCHASE_INTENT_PHRASES = (
+    "good fit",
+    "buy it",
+    "buy this",
+    "buy them",
+    "buy the",
+    "checkout",
+    "check out",
+    "order it",
+    "order this",
+    "order them",
+    "let's get it",
+    "lets get it",
+    "purchase this",
+    "purchase it",
+    "complete checkout",
+)
+
+CONSENT_CONFIRM_PHRASES = (
+    "yes",
+    "confirm",
+    "place order",
+    "place the order",
+    "pay now",
+    "complete purchase",
+    "go ahead",
+    "authorize",
+)
+
+
+def _is_consent_confirmation(utterance: str) -> bool:
+    ul = utterance.strip().lower()
+    if any(neg in ul for neg in ("no", "cancel", "stop", "wait", "don't", "do not", "swap", "change")):
+        return False
+    return any(re.search(rf"\b{re.escape(p)}\b", ul) for p in CONSENT_CONFIRM_PHRASES)
+
+
+def _is_purchase_intent(utterance: str) -> bool:
+    ul = utterance.strip().lower()
+    if any(w in ul for w in ("swap", "replace", "instead", "cheaper", "warmer", "darker", "other")):
+        return False
+    return any(p in ul for p in PURCHASE_INTENT_PHRASES)
+
+
 async def handle_thread_utterance(
     session: SpatialSession,
     req: ThreadRequest,
     swap_executor: Callable[[SpatialSession, SwapRequest], Awaitable[SwapResponse]],
+    checkout_preparer: Callable[
+        [SpatialSession, CheckoutPrepareRequest], Awaitable[CheckoutPrepareResponse]
+    ]
+    | None = None,
+    checkout_completer: Callable[
+        [SpatialSession, CheckoutCompleteRequest], Awaitable[CheckoutCompleteResponse]
+    ]
+    | None = None,
 ) -> ThreadResponse:
-    """Route natural spoken/typed request to filmstrip alternatives, adversarial block, or live swap."""
+    """Route natural spoken/typed request to checkout completion, filmstrip alternatives, adversarial block, or live swap."""
+    # 0A. Stage B voice consent: user explicitly confirms a previously prepared live checkout
+    if (
+        session.pending_confirmation_token
+        and session.pending_checkout_ids
+        and checkout_completer is not None
+        and _is_consent_confirmation(req.utterance)
+    ):
+        target_cid = session.pending_checkout_ids[0]
+        instrument = (
+            ShopPayInstrument(shop_token=session.shop_pay_token)
+            if session.shop_pay_token
+            else None
+        )
+        comp_res = await checkout_completer(
+            session,
+            CheckoutCompleteRequest(
+                checkout_id=target_cid,
+                confirmation_token=session.pending_confirmation_token,
+                explicit_user_consent=True,
+                idempotency_key=str(uuid.uuid4()),
+                payment_instrument=instrument,
+                shop_pay_bearer_token=session.shop_pay_bearer_token,
+            ),
+        )
+        if comp_res.status == "completed":
+            return ThreadResponse(
+                session_id=session.session_id,
+                intent="checkout_completed",
+                reply=(
+                    f"Order confirmed with {comp_res.merchant_name} "
+                    f"(Order {comp_res.order_id or comp_res.checkout_id}, ${comp_res.total_usd:.2f})."
+                ),
+                scope_chip="Live Checkout · Completed",
+                checkout_complete=comp_res,
+            )
+        return ThreadResponse(
+            session_id=session.session_id,
+            intent="checkout_auth_required",
+            reply=(
+                f"Continue in Shop Pay to sign in or create your account, save your delivery address & payment method, "
+                f"and complete your ${comp_res.total_usd:.2f} order with {comp_res.merchant_name}: {comp_res.continue_url}"
+            ),
+            scope_chip="Live Checkout · Shop Pay Handoff",
+            checkout_complete=comp_res,
+        )
+
+    # 0B. Stage A voice purchase intent: prepare live checkout and ask for explicit consent
+    if checkout_preparer is not None and session.checkouts and _is_purchase_intent(req.utterance):
+        prep_res = await checkout_preparer(
+            session,
+            CheckoutPrepareRequest(shop_pay_bearer_token=session.shop_pay_bearer_token),
+        )
+        return ThreadResponse(
+            session_id=session.session_id,
+            intent="checkout_confirmation_needed",
+            reply=prep_res.consent_prompt_text,
+            scope_chip="Live Checkout · Confirm Total",
+            checkout_prepare=prep_res,
+        )
+
     base = _parse_utterance_deterministic(req.utterance, session, req.pinned_item_id)
     intent_data = await _refine_intent_via_hydrogen(req.utterance, base, session)
 

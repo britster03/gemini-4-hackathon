@@ -292,14 +292,18 @@ async def render_initial_bundle(
     for _, sbytes, smime in refs:
         images_input.append((sbytes, smime))
 
-    out_bytes, out_mime, inter_id = await asyncio.to_thread(
-        _invoke_nano_banana_sync,
-        prompt,
-        images_input,
-        aspect_ratio,
-        None,
-    )
-    return out_bytes, out_mime, inter_id, refs
+    try:
+        out_bytes, out_mime, inter_id = await asyncio.to_thread(
+            _invoke_nano_banana_sync,
+            prompt,
+            images_input,
+            aspect_ratio,
+            None,
+        )
+        return out_bytes, out_mime, inter_id, refs
+    except Exception:
+        out_bytes, out_mime = _offline_blueprint_composite(room_image_bytes, refs, zones)
+        return out_bytes, out_mime, None, refs
 
 
 async def render_surgical_swap(

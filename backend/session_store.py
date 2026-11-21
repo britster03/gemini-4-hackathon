@@ -45,6 +45,12 @@ class SpatialSession:
     last_render_bytes: bytes | None = None
     last_thread_alternatives: list[ThreadAlternativeCard] = field(default_factory=list)
 
+    pending_confirmation_token: str | None = None
+    pending_checkout_ids: list[str] = field(default_factory=list)
+    shop_pay_bearer_token: str | None = None
+    shop_pay_token: str | None = None
+    completed_orders: list[dict[str, Any]] = field(default_factory=list)
+
     sse_history: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     subscribers: list[asyncio.Queue[tuple[str, dict[str, Any]] | None]] = field(
         default_factory=list
@@ -74,6 +80,7 @@ class SpatialSession:
                 "hook_events": [h.model_dump() for h in self.hook_events],
                 "verified_items": [i.model_dump() for i in self.verified_items],
                 "checkouts": [c.model_dump() for c in self.checkouts],
+                "completed_orders": self.completed_orders,
                 "versions_available": [v.version_id for v in self.versions],
             }
             (SESSIONS_DIR / f"{self.session_id}.json").write_text(

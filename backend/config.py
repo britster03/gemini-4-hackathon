@@ -79,6 +79,19 @@ def get_shop_mcp_url() -> str:
     return os.getenv("SHOP_MCP_URL", "https://mcp.shop.com/")
 
 
+def get_ucp_agent_profile_url() -> str:
+    return os.getenv(
+        "UCP_AGENT_PROFILE_URL",
+        "https://shopify.dev/ucp/agent-profiles/examples/2026-08-25/valid-with-capabilities.json",
+    )
+
+
+def get_shop_mcp_bearer_token() -> str | None:
+    reload_env()
+    tok = (os.getenv("SHOP_MCP_BEARER_TOKEN") or "").strip()
+    return tok or None
+
+
 @lru_cache(maxsize=4)
 def _build_client(api_key: str | None, api_version: str | None, vertex: bool) -> genai.Client:
     kwargs: dict = {}

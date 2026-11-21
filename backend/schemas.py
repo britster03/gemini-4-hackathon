@@ -173,20 +173,101 @@ class HookEvent(BaseModel):
     remediation_hint: str | None = None
 
 
+CheckoutStatus = Literal[
+    "incomplete",
+    "ready_for_complete",
+    "requires_escalation",
+    "completed",
+    "canceled",
+]
+
+
+class BuyerInfo(BaseModel):
+    email: str
+    first_name: str | None = None
+    last_name: str | None = None
+    phone_number: str | None = None
+
+
+class ShippingAddress(BaseModel):
+    address1: str
+    address2: str | None = None
+    city: str
+    province_code: str
+    postal_code: str
+    country_code: str = "US"
+
+
+class ShopPayInstrument(BaseModel):
+    handler_id: str = "shop_pay"
+    type: str = "shop_pay"
+    shop_token: str = Field(..., min_length=4, description="Live tokenized Shop Pay credential")
+
+
 class MerchantUCPCheckout(BaseModel):
     merchant_name: str
     shop_domain: str
     checkout_id: str
+    status: CheckoutStatus = "incomplete"
     line_item_gids: list[str]
     item_titles: list[str]
     item_count: int
     subtotal_cents: int
     subtotal_usd: float
+    tax_cents: int = 0
+    shipping_cents: int = 0
+    total_cents: int = 0
+    total_usd: float = 0.0
     currency: str = "USD"
     continue_url: str
     shop_pay_supported: bool = True
+    payment_handlers: list[str] = Field(default_factory=list)
+    order_id: str | None = None
+    order_permalink_url: str | None = None
     protocol_method: str = "ucp/mcp:create_checkout"
     raw_ucp_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CheckoutPrepareRequest(BaseModel):
+    checkout_id: str | None = None
+    buyer: BuyerInfo | None = None
+    shipping_address: ShippingAddress | None = None
+    fulfillment_option_id: str | None = None
+    shop_pay_bearer_token: str | None = None
+
+
+class CheckoutPrepareResponse(BaseModel):
+    session_id: str
+    checkouts: list[MerchantUCPCheckout]
+    grand_total_cents: int
+    grand_total_usd: float
+    requires_escalation: bool = False
+    consent_prompt_text: str
+    confirmation_token: str
+    mcp_calls: list[MCPCallTrace] = Field(default_factory=list)
+
+
+class CheckoutCompleteRequest(BaseModel):
+    checkout_id: str
+    confirmation_token: str
+    explicit_user_consent: bool
+    idempotency_key: str = Field(..., min_length=8)
+    payment_instrument: ShopPayInstrument | None = None
+    shop_pay_bearer_token: str | None = None
+
+
+class CheckoutCompleteResponse(BaseModel):
+    session_id: str
+    checkout_id: str
+    shop_domain: str
+    merchant_name: str
+    status: CheckoutStatus
+    order_id: str | None = None
+    order_permalink_url: str | None = None
+    continue_url: str
+    total_cents: int = 0
+    total_usd: float = 0.0
+    mcp_trace: MCPCallTrace | None = None
 
 
 class CartReadyEvent(BaseModel):
@@ -292,11 +373,21 @@ class SwapResponse(BaseModel):
 
 class ThreadResponse(BaseModel):
     session_id: str
-    intent: Literal["alternatives", "adversarial_blocked", "swap_executed", "clarification"]
+    intent: Literal[
+        "alternatives",
+        "adversarial_blocked",
+        "swap_executed",
+        "clarification",
+        "checkout_confirmation_needed",
+        "checkout_completed",
+        "checkout_auth_required",
+    ]
     reply: str
     scope_chip: str | None = None
     alternatives: list[ThreadAlternativeCard] = Field(default_factory=list)
     executed_swap: SwapResponse | None = None
+    checkout_prepare: CheckoutPrepareResponse | None = None
+    checkout_complete: CheckoutCompleteResponse | None = None
 
 
 class ZoneOverrideRequest(BaseModel):

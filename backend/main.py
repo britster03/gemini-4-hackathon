@@ -53,7 +53,12 @@ from backend.renderer import (
 from backend.schemas import (
     CartReadyEvent,
     CatalogReadyEvent,
+    CheckoutCompleteRequest,
+    CheckoutCompleteResponse,
+    CheckoutPrepareRequest,
+    CheckoutPrepareResponse,
     MCPCallTrace,
+    MerchantUCPCheckout,
     RenderReadyEvent,
     RenderVersion,
     ShopifySKU,
@@ -127,7 +132,7 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
             prompt=session.prompt,
             scope=session.scope,
             exif_focal_mm=session.exif_focal_mm,
-            thinking_level="xhigh",
+            thinking_level=os.getenv("CLEARBUY_SCALE_THINKING_LEVEL", "low"),
         )
         session.scale = scale_ev
         session.emit_sse("scale_ready", scale_ev.model_dump())
@@ -689,12 +694,380 @@ async def swap_session_item(session_id: str, req: SwapRequest) -> SwapResponse:
     return await execute_session_swap(session, req)
 
 
+def _is_live_checkout_id(checkout_id: str) -> bool:
+    return checkout_id.startswith("gid://shopify/Checkout/") and "/local_" not in checkout_id
+
+
+async def prepare_session_checkout(
+    session: SpatialSession, req: CheckoutPrepareRequest
+) -> CheckoutPrepareResponse:
+    """Prepare live Shopify UCP checkout(s) with buyer/shipping details and generate consent token."""
+    if not session.checkouts:
+        raise HTTPException(
+            status_code=400,
+            detail="No active Shopify checkout sessions exist in this session.",
+        )
+
+    # Final deterministic spatial & budget verification before any payment authorization
+    zones = session.scale.zones if session.scale else []
+    if session.verified_items:
+        hook_ev = verify_bundle_deterministic(
+            session_id=session.session_id,
+            zones=zones,
+            proposed_items=session.verified_items,
+            budget_usd=session.budget_usd,
+            attempt=len(session.hook_events) + 1,
+        )
+        session.hook_events.append(hook_ev)
+        if hook_ev.decision == "deny":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": f"Checkout blocked by spatial/budget guardrail: {hook_ev.reason}",
+                    "hook_deny": hook_ev.model_dump(),
+                },
+            )
+
+    targets = (
+        [c for c in session.checkouts if c.checkout_id == req.checkout_id]
+        if req.checkout_id
+        else list(session.checkouts)
+    )
+    if not targets:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Checkout '{req.checkout_id}' not found in session.",
+        )
+
+    mcp = ShopMCPClient()
+    bearer = req.shop_pay_bearer_token or session.shop_pay_bearer_token
+    if req.shop_pay_bearer_token:
+        session.shop_pay_bearer_token = req.shop_pay_bearer_token
+
+    updated_map: dict[str, MerchantUCPCheckout] = {c.checkout_id: c for c in session.checkouts}
+    prepared_list: list[MerchantUCPCheckout] = []
+    traces: list[MCPCallTrace] = []
+
+    for chk in targets:
+        if not _is_live_checkout_id(chk.checkout_id):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Checkout '{chk.checkout_id}' is not a live Shopify UCP checkout session. "
+                    "Simulated or fallback permalink checkouts cannot execute live transactions."
+                ),
+            )
+        if req.buyer is not None or req.shipping_address is not None or req.fulfillment_option_id is not None:
+            try:
+                upd, trace = await mcp.prepare_checkout_for_completion(
+                    checkout=chk,
+                    buyer=req.buyer,
+                    shipping_address=req.shipping_address,
+                    fulfillment_option_id=req.fulfillment_option_id,
+                    bearer_token=bearer,
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Live Shopify MCP update_checkout failed for {chk.shop_domain}: {exc}",
+                ) from exc
+        else:
+            try:
+                upd, trace = await mcp.get_checkout(checkout=chk, bearer_token=bearer)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Live Shopify MCP get_checkout failed for {chk.shop_domain}: {exc}",
+                ) from exc
+
+        updated_map[upd.checkout_id] = upd
+        prepared_list.append(upd)
+        traces.append(trace)
+
+    session.checkouts = list(updated_map.values())
+    session.mcp_calls.extend(traces)
+
+    grand_total_cents = sum(
+        (c.total_cents if c.total_cents > 0 else c.subtotal_cents) for c in prepared_list
+    )
+    grand_total_usd = round(grand_total_cents / 100.0, 2)
+    requires_escalation = any(
+        c.status in {"requires_escalation", "incomplete"} for c in prepared_list
+    )
+
+    confirmation_token = f"confirm_{uuid.uuid4().hex[:16]}"
+    session.pending_confirmation_token = confirmation_token
+    session.pending_checkout_ids = [c.checkout_id for c in prepared_list]
+    session.save_metadata()
+
+    merchant_names = ", ".join(c.merchant_name for c in prepared_list)
+    consent_prompt = (
+        f"Ready to place your live order with {merchant_names} for ${grand_total_usd:.2f} "
+        f"(including tax and shipping). Say 'yes, confirm purchase' to authorize payment."
+    )
+    return CheckoutPrepareResponse(
+        session_id=session.session_id,
+        checkouts=prepared_list,
+        grand_total_cents=grand_total_cents,
+        grand_total_usd=grand_total_usd,
+        requires_escalation=requires_escalation,
+        consent_prompt_text=consent_prompt,
+        confirmation_token=confirmation_token,
+        mcp_calls=traces,
+    )
+
+
+async def complete_session_checkout(
+    session: SpatialSession, req: CheckoutCompleteRequest
+) -> CheckoutCompleteResponse:
+    """Execute a live, non-simulated Shopify UCP `complete_checkout` with hard consent guardrails."""
+    if not req.explicit_user_consent:
+        raise HTTPException(
+            status_code=400,
+            detail="Explicit user consent (`explicit_user_consent=true`) is required before executing a live payment.",
+        )
+    if (
+        not session.pending_confirmation_token
+        or req.confirmation_token != session.pending_confirmation_token
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired `confirmation_token`. Call `/checkout/prepare` and obtain fresh user confirmation.",
+        )
+
+    target = next(
+        (c for c in session.checkouts if c.checkout_id == req.checkout_id),
+        None,
+    )
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Checkout '{req.checkout_id}' not found in session.",
+        )
+    if not _is_live_checkout_id(target.checkout_id):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Checkout '{target.checkout_id}' is not a live Shopify UCP checkout ID. "
+                "Refusing to execute simulated/fallback transaction."
+            ),
+        )
+
+    # If no live tokenized Shop Pay instrument is provided, escalate cleanly to hosted Shop Pay `continue_url`
+    if req.payment_instrument is None:
+        target.status = "requires_escalation"
+        session.emit_sse(
+            "checkout_escalation_required",
+            {
+                "session_id": session.session_id,
+                "checkout_id": target.checkout_id,
+                "shop_domain": target.shop_domain,
+                "continue_url": target.continue_url,
+                "reason": "Shop Pay authentication / payment instrument required via hosted continue_url.",
+            },
+        )
+        session.save_metadata()
+        total_cents = target.total_cents if target.total_cents > 0 else target.subtotal_cents
+        return CheckoutCompleteResponse(
+            session_id=session.session_id,
+            checkout_id=target.checkout_id,
+            shop_domain=target.shop_domain,
+            merchant_name=target.merchant_name,
+            status="requires_escalation",
+            order_id=None,
+            order_permalink_url=None,
+            continue_url=target.continue_url,
+            total_cents=total_cents,
+            total_usd=round(total_cents / 100.0, 2),
+            mcp_trace=None,
+        )
+
+    mcp = ShopMCPClient()
+    bearer = req.shop_pay_bearer_token or session.shop_pay_bearer_token
+    try:
+        completed, trace = await mcp.complete_checkout(
+            checkout=target,
+            idempotency_key=req.idempotency_key,
+            payment_instrument=req.payment_instrument,
+            bearer_token=bearer,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Live Shopify MCP complete_checkout failed for {target.shop_domain}: {exc}",
+        ) from exc
+
+    session.mcp_calls.append(trace)
+    session.checkouts = [
+        completed if c.checkout_id == completed.checkout_id else c
+        for c in session.checkouts
+    ]
+
+    if completed.status == "completed":
+        session.pending_confirmation_token = None
+        session.completed_orders.append(
+            {
+                "checkout_id": completed.checkout_id,
+                "shop_domain": completed.shop_domain,
+                "merchant_name": completed.merchant_name,
+                "order_id": completed.order_id,
+                "order_permalink_url": completed.order_permalink_url,
+                "total_cents": completed.total_cents,
+                "total_usd": completed.total_usd,
+            }
+        )
+        session.emit_sse(
+            "checkout_completed",
+            {
+                "session_id": session.session_id,
+                "checkout_id": completed.checkout_id,
+                "shop_domain": completed.shop_domain,
+                "order_id": completed.order_id,
+                "order_permalink_url": completed.order_permalink_url,
+                "total_usd": completed.total_usd,
+            },
+        )
+    else:
+        session.emit_sse(
+            "checkout_escalation_required",
+            {
+                "session_id": session.session_id,
+                "checkout_id": completed.checkout_id,
+                "shop_domain": completed.shop_domain,
+                "status": completed.status,
+                "continue_url": completed.continue_url,
+            },
+        )
+
+    session.save_metadata()
+    total_cents = completed.total_cents if completed.total_cents > 0 else completed.subtotal_cents
+    return CheckoutCompleteResponse(
+        session_id=session.session_id,
+        checkout_id=completed.checkout_id,
+        shop_domain=completed.shop_domain,
+        merchant_name=completed.merchant_name,
+        status=completed.status,
+        order_id=completed.order_id,
+        order_permalink_url=completed.order_permalink_url,
+        continue_url=completed.continue_url,
+        total_cents=total_cents,
+        total_usd=round(total_cents / 100.0, 2),
+        mcp_trace=trace,
+    )
+
+
+@app.post("/api/session/{session_id}/checkout/prepare", response_model=CheckoutPrepareResponse)
+async def post_checkout_prepare(
+    session_id: str, req: CheckoutPrepareRequest
+) -> CheckoutPrepareResponse:
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+    return await prepare_session_checkout(session, req)
+
+
+@app.post("/api/session/{session_id}/checkout/complete", response_model=CheckoutCompleteResponse)
+async def post_checkout_complete(
+    session_id: str, req: CheckoutCompleteRequest
+) -> CheckoutCompleteResponse:
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+    return await complete_session_checkout(session, req)
+
+
+@app.get(
+    "/api/session/{session_id}/checkout/{checkout_id:path}/status",
+    response_model=CheckoutCompleteResponse,
+)
+async def get_checkout_live_status(
+    session_id: str, checkout_id: str
+) -> CheckoutCompleteResponse:
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+    target = next((c for c in session.checkouts if c.checkout_id == checkout_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Checkout '{checkout_id}' not found in session.")
+    if not _is_live_checkout_id(target.checkout_id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Checkout '{target.checkout_id}' is not a live Shopify UCP checkout ID.",
+        )
+
+    mcp = ShopMCPClient()
+    try:
+        refreshed, trace = await mcp.get_checkout(
+            checkout=target,
+            bearer_token=session.shop_pay_bearer_token,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Live Shopify MCP get_checkout failed for {target.shop_domain}: {exc}",
+        ) from exc
+
+    session.mcp_calls.append(trace)
+    session.checkouts = [
+        refreshed if c.checkout_id == refreshed.checkout_id else c
+        for c in session.checkouts
+    ]
+    if refreshed.status == "completed" and not any(
+        o.get("checkout_id") == refreshed.checkout_id for o in session.completed_orders
+    ):
+        session.completed_orders.append(
+            {
+                "checkout_id": refreshed.checkout_id,
+                "shop_domain": refreshed.shop_domain,
+                "merchant_name": refreshed.merchant_name,
+                "order_id": refreshed.order_id,
+                "order_permalink_url": refreshed.order_permalink_url,
+                "total_cents": refreshed.total_cents,
+                "total_usd": refreshed.total_usd,
+            }
+        )
+        session.emit_sse(
+            "checkout_completed",
+            {
+                "session_id": session.session_id,
+                "checkout_id": refreshed.checkout_id,
+                "shop_domain": refreshed.shop_domain,
+                "order_id": refreshed.order_id,
+                "order_permalink_url": refreshed.order_permalink_url,
+                "total_usd": refreshed.total_usd,
+            },
+        )
+    session.save_metadata()
+    total_cents = refreshed.total_cents if refreshed.total_cents > 0 else refreshed.subtotal_cents
+    return CheckoutCompleteResponse(
+        session_id=session.session_id,
+        checkout_id=refreshed.checkout_id,
+        shop_domain=refreshed.shop_domain,
+        merchant_name=refreshed.merchant_name,
+        status=refreshed.status,
+        order_id=refreshed.order_id,
+        order_permalink_url=refreshed.order_permalink_url,
+        continue_url=refreshed.continue_url,
+        total_cents=total_cents,
+        total_usd=round(total_cents / 100.0, 2),
+        mcp_trace=trace,
+    )
+
+
 @app.post("/api/session/{session_id}/thread", response_model=ThreadResponse)
 async def post_session_thread(session_id: str, req: ThreadRequest) -> ThreadResponse:
     session = get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-    return await handle_thread_utterance(session, req, execute_session_swap)
+    return await handle_thread_utterance(
+        session,
+        req,
+        execute_session_swap,
+        checkout_preparer=prepare_session_checkout,
+        checkout_completer=complete_session_checkout,
+    )
 
 
 @app.patch("/api/session/{session_id}/zone", response_model=ZoneOverrideResponse)

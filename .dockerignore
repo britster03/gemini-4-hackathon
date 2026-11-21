@@ -1,0 +1,11 @@
+.git
+.venv
+.env.local
+.env*.local
+frontend
+learning
+node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.DS_Store

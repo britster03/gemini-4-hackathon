@@ -8,58 +8,48 @@ export function DatumLogo({ className = "h-7 w-7" }: { className?: string }) {
       viewBox="0 0 32 32"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={`${className} shrink-0`}
+      className={`${className} shrink-0 text-at-ink`}
       aria-label="Datum"
     >
       <defs>
         <linearGradient
-          id="datumBgGrad"
-          x1="0"
-          y1="0"
-          x2="32"
-          y2="32"
+          id="datumCaliperCyan"
+          x1="4"
+          y1="16"
+          x2="28"
+          y2="16"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0%" stopColor="#181C24" />
-          <stop offset="100%" stopColor="#0E1117" />
-        </linearGradient>
-        <linearGradient
-          id="datumAccentGrad"
-          x1="8"
-          y1="8"
-          x2="24"
-          y2="24"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset="0%" stopColor="#38BDF8" />
-          <stop offset="100%" stopColor="#34D399" />
+          <stop offset="0%" stopColor="#0EA5E9" />
+          <stop offset="100%" stopColor="#38BDF8" />
         </linearGradient>
       </defs>
-      <rect
-        x="1"
-        y="1"
-        width="30"
-        height="30"
-        rx="8"
-        fill="url(#datumBgGrad)"
-        stroke="rgba(255,255,255,0.14)"
-        strokeWidth="1.2"
-      />
-      {/* Architectural D Monogram */}
+      {/* Top & Bottom Precision Architectural Spine + D-Arch (Adapts to Dark & Light Mode) */}
       <path
-        d="M10 8.5H15.2C19.8 8.5 23 11.7 23 16C23 20.3 19.8 23.5 15.2 23.5H10V8.5Z"
-        stroke="#F8FAFC"
-        strokeWidth="2.1"
+        d="M7 5.5H15.5C21.8513 5.5 27 10.201 27 16C27 21.799 21.8513 26.5 15.5 26.5H7"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* Caliper Crosshair Axis */}
+      {/* Caliper Vertical End-Caps on Left Spine */}
       <path
-        d="M10 16H17.4"
-        stroke="url(#datumAccentGrad)"
-        strokeWidth="1.9"
+        d="M7 5.5V11.5M7 20.5V26.5"
+        stroke="currentColor"
+        strokeWidth="2.5"
         strokeLinecap="round"
       />
-      <circle cx="17.8" cy="16" r="1.8" fill="#38BDF8" />
+      {/* Precision Cyan Datum Measurement Axis & Diamond Node */}
+      <path
+        d="M4.5 16H17.5"
+        stroke="url(#datumCaliperCyan)"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M19.5 13L22.5 16L19.5 19L16.5 16L19.5 13Z"
+        fill="#38BDF8"
+      />
     </svg>
   );
 }

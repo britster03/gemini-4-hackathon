@@ -111,11 +111,60 @@ def extract_requested_categories(prompt: str, scope: SpaceScope = "auto") -> lis
         keep_clause = keep_match.group(1)
 
     found: list[str] = []
+    matched_spans: list[str] = []
     for canonical, phrases in catalog_keywords:
-        if any(re.search(rf"\b{re.escape(ph)}s?\b", p) for ph in phrases):
+        matched_ph = next((ph for ph in phrases if re.search(rf"\b{re.escape(ph)}s?\b", p)), None)
+        if matched_ph:
             if canonical in keep_clause and f"replace the {canonical}" not in p:
                 continue
             found.append(canonical)
+            matched_spans.append(matched_ph)
+
+    # Open-vocabulary extraction: also capture ANY custom product/item the user mentions
+    # (e.g., "espresso machine", "bean bag", "cat tree", "vinyl record player", "mini fridge", "air purifier")
+    # so Shopify Shop MCP fetches literally any item the user requests.
+    cleaned_open = p
+    if keep_match:
+        cleaned_open = cleaned_open.replace(keep_match.group(0), " ")
+    # Remove budget phrases, room-context boilerplate, and leading verbs
+    cleaned_open = re.sub(r"\bunder\s+\$?\d[\d,]*(?:\.\d+)?\b", " ", cleaned_open)
+    cleaned_open = re.sub(r"\b(?:budget|max|around|about|below)\s+\$?\d[\d,]*(?:\.\d+)?\b", " ", cleaned_open)
+    cleaned_open = re.sub(r"\$\d[\d,]*(?:\.\d+)?", " ", cleaned_open)
+    cleaned_open = re.sub(
+        r"\b(?:in|for|into|on|near|against)\s+(?:this|my|the)\s+(?:room|nook|alcove|space|corner|wall|bedroom|living room|office|apartment|studio|setup)\b",
+        " ",
+        cleaned_open,
+    )
+    cleaned_open = re.sub(
+        r"\b(?:set up|furnish|design|create|build|add|put|place|get|find|give me|i want|i need|replace with|swap for|with|please|some|some nice|a few|my|the|this|that|compact|modern|minimalist|warm|cozy|sleek|small|large|ergonomic|stylish|aesthetic|nice|good|real|home office|living room|bedroom)\b",
+        " ",
+        cleaned_open,
+    )
+    raw_chunks = re.split(r",|;|\band\b|\bplus\b|\+|&", cleaned_open)
+    stop_words = {
+        "a", "an", "to", "of", "for", "in", "on", "at", "by", "or", "it", "me",
+        "room", "space", "nook", "alcove", "corner", "wall", "setup", "upgrade",
+        "furniture", "items", "things", "stuff", "decor", "keep", "existing", "new",
+    }
+    for chunk in raw_chunks:
+        tokens = [
+            tok for tok in re.findall(r"[a-z0-9-]+", chunk)
+            if tok not in stop_words and len(tok) > 1
+        ]
+        if not tokens:
+            continue
+        phrase = " ".join(tokens[:4]).strip()
+        if len(phrase) < 3:
+            continue
+        # Skip if already covered by one of our canonical furniture matches
+        if any(
+            canonical in phrase or phrase in canonical or any(ph in phrase for ph in phrases)
+            for canonical, phrases in catalog_keywords
+            if canonical in found
+        ):
+            continue
+        if phrase not in found:
+            found.append(phrase)
 
     if not found:
         if scope == "full_room":
@@ -123,7 +172,7 @@ def extract_requested_categories(prompt: str, scope: SpaceScope = "auto") -> lis
         if scope == "upgrade":
             return ["chair", "lamp", "desk mat"]
         return ["desk", "chair"]
-    return found
+    return found[:6]
 
 
 def _extract_json_block(text: str) -> dict[str, Any]:

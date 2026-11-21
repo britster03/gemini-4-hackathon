@@ -1,0 +1,33 @@
+[project]
+name = "clearbuy"
+version = "0.1.0"
+description = "ClearBuy (Datum / Caliper) — Verified Spatial Commerce Compiler"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=3.2.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.8.0",
+    "python-dotenv>=1.0.1",
+    "pillow>=10.4.0",
+    "numpy>=1.26.0",
+    "httpx>=0.27.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+depth = [
+    "torch>=2.2.0",
+    "transformers>=4.45.0",
+]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]
+testpaths = ["tests"]

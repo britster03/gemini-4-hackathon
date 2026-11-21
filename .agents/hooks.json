@@ -1,0 +1,17 @@
+{
+  "spatial-budget-guardrail": {
+    "enabled": true,
+    "pre_tool_execution": [
+      {
+        "matcher": "write_to_file|replace_file_content|write_file|create_file|edit_file|code_execution",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import os, runpy; p = '/.agents/verify_bundle.py' if os.path.exists('/.agents/verify_bundle.py') else ('/workspace/.agents/verify_bundle.py' if os.path.exists('/workspace/.agents/verify_bundle.py') else '.agents/verify_bundle.py'); runpy.run_path(p, run_name='__main__')\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

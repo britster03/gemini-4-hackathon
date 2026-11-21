@@ -14,6 +14,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { BenchmarkDrawer } from "@/components/BenchmarkDrawer";
+import { DatumLogo, PoweredByBar } from "@/components/BrandMarks";
 import { MOCK_BENCHMARK_DATA } from "@/lib/mockData";
 import { DEFAULT_USE_MOCK, fetchBenchmarkData } from "@/lib/sseClient";
 import type { BenchmarkData } from "@/types/clearbuy";
@@ -35,14 +36,15 @@ export default function UnderTheHoodPage() {
       {/* Top Bar */}
       <header className="h-12 px-4 border-b border-at-border bg-at-card flex items-center justify-between gap-3 sticky top-0 z-40">
         <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="h-7 w-7 rounded-lg bg-at-cyan/15 border border-at-cyan/50 flex items-center justify-center text-at-cyan">
-              <Compass className="h-4 w-4" />
-            </span>
+          <Link href="/" className="flex items-center gap-2.5">
+            <DatumLogo className="h-7 w-7 shrink-0" />
             <span className="text-sm font-semibold tracking-[-0.02em] text-at-ink">
               Datum
             </span>
           </Link>
+          <span className="hidden sm:inline-block ml-1">
+            <PoweredByBar compact />
+          </span>
           <span className="text-xs font-mono text-at-muted">
             / under-the-hood
           </span>

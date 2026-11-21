@@ -32,6 +32,7 @@ import { GlassBoxRail } from "@/components/GlassBoxRail";
 import { ShopifyCommerceRail } from "@/components/ShopifyCommerceRail";
 import { VoiceSpatialThread } from "@/components/VoiceSpatialThread";
 import { BenchmarkDrawer } from "@/components/BenchmarkDrawer";
+import { DatumLogo } from "@/components/BrandMarks";
 
 export default function DatumStudioPage() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -506,11 +507,9 @@ export default function DatumStudioPage() {
           <button
             type="button"
             onClick={resetToCapture}
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex items-center gap-2.5 cursor-pointer"
           >
-            <span className="h-7 w-7 rounded-lg bg-at-cyan/15 border border-at-cyan/50 flex items-center justify-center text-at-cyan">
-              <Compass className="h-4 w-4" />
-            </span>
+            <DatumLogo className="h-7 w-7 shrink-0" />
             <span className="text-sm font-semibold tracking-[-0.02em] text-at-ink">
               Datum
             </span>

@@ -23,6 +23,7 @@ import {
   type ProcessedRoomImage,
 } from "@/lib/imageUtils";
 import { DEMO_PRESETS } from "@/lib/mockData";
+import { PoweredByBar } from "@/components/BrandMarks";
 
 interface CaptureCanvasProps {
   onLaunchSession: (payload: {
@@ -654,12 +655,12 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
           </div>
         </div>
 
-        {/* Subtle Footer Link to Engineer C's /under-the-hood & Judge Benchmarks */}
-        <div className="pt-3 border-t border-at-border flex items-center justify-between text-xs text-at-muted">
-          <span>Real in-stock Shopify stores · Shop Pay checkout</span>
+        {/* Subtle Footer: Powered by Google Gemini & Shopify + /under-the-hood */}
+        <div className="pt-3 border-t border-at-border flex flex-wrap items-center justify-between gap-2 text-xs text-at-muted">
+          <PoweredByBar compact />
           <Link
             href="/under-the-hood"
-            className="inline-flex items-center gap-1 text-at-cyan hover:underline font-medium"
+            className="inline-flex items-center gap-1 text-at-cyan hover:underline font-medium shrink-0"
           >
             <Cpu className="h-3.5 w-3.5" />
             Under the Hood &amp; Proof ↗

@@ -39,6 +39,8 @@ export function ShopifyCommerceRail({
 }: ShopifyCommerceRailProps) {
   const [showUcpModal, setShowUcpModal] = useState(false);
   const [dirtyVariantItems, setDirtyVariantItems] = useState<Record<string, boolean>>({});
+  const [activeSkuTab, setActiveSkuTab] = useState<string>("all");
+  const [activePhotoByItem, setActivePhotoByItem] = useState<Record<string, number>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -77,6 +79,42 @@ export function ShopifyCommerceRail({
         </button>
       </div>
 
+      {/* Dynamic Multi-SKU Tabs Bar (scales to ANY number of SKUs requested by user) */}
+      {cartData && cartData.items.length > 1 && (
+        <div className="px-4 py-2 border-b border-at-border flex items-center gap-1.5 overflow-x-auto bg-at-bg/40 shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveSkuTab("all")}
+            className={`px-2.5 py-1 rounded-md text-[10px] font-mono border shrink-0 cursor-pointer transition-colors ${
+              activeSkuTab === "all"
+                ? "bg-at-cyan/15 border-at-cyan text-at-cyan font-semibold"
+                : "bg-at-card border-at-border text-at-muted hover:text-at-ink"
+            }`}
+          >
+            All ({cartData.items.length})
+          </button>
+          {cartData.items.map((it) => {
+            const isTabAct = activeSkuTab === it.item_id;
+            const imgCount = it.images?.length || (it.image_url ? 1 : 0);
+            return (
+              <button
+                key={`tab-${it.item_id}`}
+                type="button"
+                onClick={() => setActiveSkuTab(it.item_id)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-mono border shrink-0 cursor-pointer transition-colors ${
+                  isTabAct
+                    ? "bg-at-cyan/15 border-at-cyan text-at-cyan font-semibold"
+                    : "bg-at-card border-at-border text-at-muted hover:text-at-ink"
+                }`}
+              >
+                #{it.pin_number} · {it.category}
+                {imgCount > 1 ? ` (${imgCount})` : ""}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Spacious Scrollable Product Cards */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {isLoading && !cartData && (
@@ -97,9 +135,14 @@ export function ShopifyCommerceRail({
           </>
         )}
 
-        {cartData?.items.map((item) => {
+        {(cartData?.items ?? [])
+          .filter((item) => activeSkuTab === "all" || item.item_id === activeSkuTab)
+          .map((item) => {
           const isHovered = hoveredItemId === item.item_id;
           const needsRerender = Boolean(dirtyVariantItems[item.item_id]);
+          const gallery = item.images && item.images.length > 0 ? item.images : item.image_url ? [item.image_url] : [];
+          const activeImgIdx = Math.min(activePhotoByItem[item.item_id] ?? 0, Math.max(0, gallery.length - 1));
+          const displayImg = gallery[activeImgIdx] || item.image_url;
           return (
             <div
               key={item.item_id}
@@ -114,10 +157,10 @@ export function ShopifyCommerceRail({
               }`}
             >
               <div className="flex gap-3">
-                <div className="relative h-18 w-18 rounded-lg overflow-hidden border border-at-border bg-at-card shrink-0">
+                <div className="relative h-20 w-20 rounded-lg overflow-hidden border border-at-border bg-at-card shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={item.image_url}
+                    src={displayImg}
                     alt={item.title}
                     className="h-full w-full object-cover"
                   />
@@ -129,7 +172,19 @@ export function ShopifyCommerceRail({
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="text-xs font-semibold text-at-ink leading-snug line-clamp-2">
-                      {item.title}
+                      {item.product_url ? (
+                        <a
+                          href={item.product_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline inline-flex items-center gap-1"
+                        >
+                          <span>{item.title}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0 text-at-cyan" />
+                        </a>
+                      ) : (
+                        item.title
+                      )}
                     </h3>
                     <span className="text-xs font-mono font-semibold tabular-nums-strict text-at-ink shrink-0">
                       ${item.price_usd.toFixed(2)}
@@ -146,6 +201,32 @@ export function ShopifyCommerceRail({
                       In Stock · {formatFreshness(item.stock_verified_at)}
                     </span>
                   </div>
+
+                  {/* All Real Shopify Product Gallery Thumbnails */}
+                  {gallery.length > 1 && (
+                    <div className="flex items-center gap-1 pt-1 overflow-x-auto">
+                      {gallery.map((gUrl, gIdx) => (
+                        <button
+                          key={`${item.item_id}-img-${gIdx}`}
+                          type="button"
+                          onClick={() =>
+                            setActivePhotoByItem((prev) => ({
+                              ...prev,
+                              [item.item_id]: gIdx,
+                            }))
+                          }
+                          className={`h-8 w-8 rounded overflow-hidden border shrink-0 cursor-pointer transition-all ${
+                            gIdx === activeImgIdx
+                              ? "border-at-cyan ring-1 ring-at-cyan/40"
+                              : "border-at-border opacity-70 hover:opacity-100"
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={gUrl} alt={`${item.title} #${gIdx + 1}`} className="h-full w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                     {item.fit_state === "verified" && (

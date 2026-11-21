@@ -115,6 +115,9 @@ export interface VerifiedCartItem {
   fit_state: FitBadgeState;
   fit_label: string; // e.g., 'Verified Fit · 40.0" ≤ 43.5"'
   image_url: string;
+  images?: string[];
+  product_url?: string | null;
+  merchant_sku?: string | null;
   stock_verified_at: number; // epoch ms
   selected_variant_id: string;
   variants: ProductVariant[];

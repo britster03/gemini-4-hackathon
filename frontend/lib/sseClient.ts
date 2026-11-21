@@ -334,6 +334,13 @@ function normalizeShopifySKU(s: any, idx: number, zoneWidthIn = 43.5): VerifiedC
         ? "Unverified Specs · Check Seller"
         : "Blocked by Hook"),
     image_url: String(s.image_url ?? ""),
+    images: Array.isArray(s.images) && s.images.length > 0
+      ? s.images.map((u: unknown) => String(u)).filter(Boolean)
+      : s.image_url
+      ? [String(s.image_url)]
+      : [],
+    product_url: s.product_url ? String(s.product_url) : null,
+    merchant_sku: s.merchant_sku ? String(s.merchant_sku) : null,
     stock_verified_at: verifiedEpoch,
     selected_variant_id: String(
       s.selected_variant_id ?? variants[0]?.variant_id ?? ""

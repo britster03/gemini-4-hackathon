@@ -78,17 +78,32 @@ KNOWN_ANCHOR_INCHES: dict[str, tuple[str, float, str]] = {
 
 
 def extract_requested_categories(prompt: str, scope: SpaceScope = "auto") -> list[str]:
-    """Extract ordered target furniture categories from natural spoken/typed request."""
+    """Extract ordered target furniture/decor categories from natural spoken/typed request (universal)."""
     p = prompt.lower()
     catalog_keywords: list[tuple[str, list[str]]] = [
-        ("desk", ["standing desk", "executive desk", "writing desk", "desk"]),
-        ("chair", ["ergonomic chair", "office chair", "accent chair", "armchair", "chair"]),
-        ("shelf", ["slim bookcase", "bookcase", "bookshelf", "slim shelf", "shelf"]),
-        ("sofa", ["sectional", "loveseat", "sofa", "couch"]),
-        ("coffee table", ["coffee table", "side table", "end table"]),
-        ("lamp", ["floor lamp", "task lamp", "desk lamp", "table lamp", "lamp"]),
-        ("rug", ["area rug", "runner rug", "rug"]),
-        ("desk mat", ["desk mat", "desk pad"]),
+        ("desk", ["standing desk", "executive desk", "writing desk", "computer desk", "desk"]),
+        ("chair", ["ergonomic chair", "office chair", "accent chair", "dining chair", "armchair", "lounge chair", "chair"]),
+        ("shelf", ["slim bookcase", "bookcase", "bookshelf", "floating shelf", "slim shelf", "shelving", "shelf"]),
+        ("sofa", ["sectional", "loveseat", "sleeper sofa", "sofa", "couch", "futon"]),
+        ("coffee table", ["coffee table", "cocktail table"]),
+        ("side table", ["side table", "end table", "accent table", "c-table"]),
+        ("dining table", ["dining table", "kitchen table", "bistro table"]),
+        ("bed", ["platform bed", "queen bed", "king bed", "twin bed", "bed frame", "bed"]),
+        ("nightstand", ["nightstand", "bedside table", "night stand"]),
+        ("dresser", ["dresser", "chest of drawers", "wardrobe", "armoire"]),
+        ("media console", ["tv stand", "media console", "entertainment center", "credenza", "sideboard", "console table", "console"]),
+        ("ottoman", ["ottoman", "pouf", "footstool", "bench"]),
+        ("barstool", ["barstool", "bar stool", "counter stool", "stool"]),
+        ("mirror", ["full length mirror", "arched mirror", "wall mirror", "floor mirror", "mirror"]),
+        ("wall art", ["framed art", "wall art", "canvas art", "poster frame", "tapestry"]),
+        ("lamp", ["floor lamp", "task lamp", "desk lamp", "table lamp", "sconce", "pendant light", "lamp"]),
+        ("rug", ["area rug", "runner rug", "persian rug", "carpet", "rug"]),
+        ("desk mat", ["desk mat", "desk pad", "mouse pad"]),
+        ("monitor", ["ultrawide monitor", "computer monitor", "monitor stand", "monitor riser", "monitor"]),
+        ("plant", ["faux tree", "fiddle leaf", "potted plant", "planter", "indoor plant", "plant"]),
+        ("cabinet", ["storage cabinet", "filing cabinet", "shoe cabinet", "bar cart", "cabinet"]),
+        ("curtains", ["blackout curtains", "drapes", "curtains"]),
+        ("organizer", ["desk organizer", "storage basket", "hamper", "organizer"]),
     ]
     keep_clause = ""
     keep_match = re.search(r"keep\s+(?:my\s+)?(?:existing\s+)?([a-z\s]+?)(?:;|,|\.|and\s+replace)", p)
@@ -97,7 +112,7 @@ def extract_requested_categories(prompt: str, scope: SpaceScope = "auto") -> lis
 
     found: list[str] = []
     for canonical, phrases in catalog_keywords:
-        if any(ph in p for ph in phrases):
+        if any(re.search(rf"\b{re.escape(ph)}s?\b", p) for ph in phrases):
             if canonical in keep_clause and f"replace the {canonical}" not in p:
                 continue
             found.append(canonical)

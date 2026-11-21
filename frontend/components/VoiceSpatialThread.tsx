@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -10,6 +10,8 @@ import {
   Send,
   ShieldAlert,
   Sparkles,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import type {
@@ -65,7 +67,27 @@ export function VoiceSpatialThread({
   const [input, setInput] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
+  const [voiceReplyOn, setVoiceReplyOn] = useState(true);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const lastSpokenIdRef = useRef<string | null>(null);
+
+  // Two-way voice: speak assistant replies aloud when voiceReplyOn is enabled
+  useEffect(() => {
+    if (!voiceReplyOn || typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistant || lastAssistant.id === lastSpokenIdRef.current) return;
+    lastSpokenIdRef.current = lastAssistant.id;
+    try {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(lastAssistant.text);
+      utter.rate = 1.05;
+      window.speechSynthesis.speak(utter);
+    } catch {
+      // Ignore browser autoplay restrictions cleanly
+    }
+  }, [messages, voiceReplyOn]);
 
   const latestWithAlts = [...messages]
     .reverse()
@@ -296,6 +318,24 @@ export function VoiceSpatialThread({
             <span className="hidden sm:inline text-xs font-medium">
               {isListening ? "Listening…" : "Speak"}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (voiceReplyOn && typeof window !== "undefined" && "speechSynthesis" in window) {
+                window.speechSynthesis.cancel();
+              }
+              setVoiceReplyOn((v) => !v);
+            }}
+            className={`h-10 w-10 rounded-full flex items-center justify-center border transition-colors shrink-0 cursor-pointer ${
+              voiceReplyOn
+                ? "bg-at-card border-at-border text-at-emerald hover:border-at-emerald"
+                : "bg-at-card border-at-border text-at-muted hover:text-at-ink"
+            }`}
+            title={voiceReplyOn ? "Spoken voice replies ON (click to mute)" : "Spoken voice replies muted"}
+          >
+            {voiceReplyOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           </button>
 
           {scopeChipLabel && (

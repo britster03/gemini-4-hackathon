@@ -126,17 +126,40 @@ async def _run_session_pipeline(session: SpatialSession) -> None:
         primary_img_bytes, primary_mime = session.room_images[0]
 
         # ------------------------------------------------------------------
-        # Stage 1: Zero-Measurement Scale Calibration (`scale_ready`)
+        # Stage 1: Zero-Measurement Scale Calibration across ALL 1-3 uploaded angles (`scale_ready`)
         # ------------------------------------------------------------------
-        scale_ev = await run_scale_calibration(
-            session_id=session.session_id,
-            image_bytes=primary_img_bytes,
-            mime_type=primary_mime,
-            prompt=session.prompt,
-            scope=session.scope,
-            exif_focal_mm=session.exif_focal_mm,
-            thinking_level=os.getenv("CLEARBUY_SCALE_THINKING_LEVEL", "low"),
-        )
+        scale_tasks = [
+            run_scale_calibration(
+                session_id=session.session_id,
+                image_bytes=img_b,
+                mime_type=img_m,
+                prompt=session.prompt,
+                scope=session.scope,
+                exif_focal_mm=session.exif_focal_mm,
+                thinking_level=os.getenv("CLEARBUY_SCALE_THINKING_LEVEL", "low"),
+            )
+            for img_b, img_m in session.room_images[:3]
+        ]
+        angle_scales = await asyncio.gather(*scale_tasks)
+        scale_ev = angle_scales[0]
+        if len(angle_scales) > 1:
+            merged_zones = list(scale_ev.zones)
+            merged_anchors = list(scale_ev.anchors_detected)
+            merged_protected = list(scale_ev.protected_anchors)
+            for a_idx, extra_sc in enumerate(angle_scales[1:], start=2):
+                for z in extra_sc.zones:
+                    zc = z.model_copy(deep=True)
+                    zc.zone_id = f"A{a_idx}_{zc.zone_id}"
+                    zc.label = f"Angle {a_idx} · {zc.label}"
+                    merged_zones.append(zc)
+                merged_anchors.extend(extra_sc.anchors_detected)
+                merged_protected.extend(extra_sc.protected_anchors)
+            scale_ev.zones = merged_zones
+            scale_ev.anchors_detected = merged_anchors
+            scale_ev.protected_anchors = merged_protected
+            scale_ev.calibration_summary = (
+                f"{scale_ev.calibration_summary} · {len(angle_scales)} angles calibrated"
+            )
         session.scale = scale_ev
         session.emit_sse("scale_ready", scale_ev.model_dump())
 

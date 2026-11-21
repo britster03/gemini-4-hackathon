@@ -21,3 +21,21 @@ services:
         value: gemini-decision-1
       - key: SHOP_MCP_URL
         value: https://mcp.shop.com/
+
+  - type: web
+    name: clearbuy-frontend
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start -- -H 0.0.0.0 -p $PORT
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NEXT_PUBLIC_USE_MOCK_SSE
+        value: "false"
+      - key: NEXT_PUBLIC_API_BASE_URL
+        fromService:
+          type: web
+          name: clearbuy-backend
+          property: host

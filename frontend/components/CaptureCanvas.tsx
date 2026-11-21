@@ -176,10 +176,12 @@ export function CaptureCanvas({ onLaunchSession }: CaptureCanvasProps) {
     });
   };
 
-  const heroExampleImg = makeSunlitRoomSvg({
-    vibe: "scandi",
-    rendered: previewMode === "rendered",
-  });
+  const heroExampleImg =
+    previewMode === "original"
+      ? "/demos/nyc_1_original.jpg"
+      : previewMode === "blueprint"
+      ? "/demos/nyc_2_blueprint.jpg"
+      : "/demos/nyc_4_render_v1.jpg";
 
   return (
     <div

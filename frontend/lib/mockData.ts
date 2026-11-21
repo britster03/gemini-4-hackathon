@@ -141,13 +141,9 @@ export const DEMO_PRESETS: DemoPreset[] = [
     budget_usd: 450,
     prompt:
       "Put a compact standing desk, ergonomic chair, and warm task lamp in that empty stretch under $450.",
-    room_image_url: makeSunlitRoomSvg({ vibe: "scandi", rendered: false }),
-    rendered_image_url: makeSunlitRoomSvg({ vibe: "scandi", rendered: true }),
-    rendered_v2_image_url: makeSunlitRoomSvg({
-      vibe: "scandi",
-      rendered: true,
-      warmChair: true,
-    }),
+    room_image_url: "/demos/nyc_1_original.jpg",
+    rendered_image_url: "/demos/nyc_4_render_v1.jpg",
+    rendered_v2_image_url: "/demos/nyc_5_swap_v2.jpg",
     exif_focal_mm: 26,
   },
   {

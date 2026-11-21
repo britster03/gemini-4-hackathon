@@ -500,70 +500,102 @@ export default function DatumStudioPage() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-at-bg text-at-ink overflow-hidden transition-colors duration-200">
-      {/* Top 48px Utility Bar (Section 03.A) */}
-      <header className="h-12 px-4 border-b border-at-border bg-at-card flex items-center justify-between gap-3 shrink-0 z-40">
-        {/* Left: Datum Wordmark + New Space */}
-        <div className="flex items-center gap-3">
+      {/* Top 56px Studio Navigation Bar */}
+      <header className="h-14 px-5 border-b border-at-border/80 bg-at-bg/95 backdrop-blur-md grid grid-cols-[1fr_auto_1fr] items-center gap-4 shrink-0 z-40">
+        {/* Left: Datum Brand Lockup + Subtle Ghost New Space Action */}
+        <div className="flex items-center gap-3 justify-self-start">
           <button
             type="button"
             onClick={resetToCapture}
-            className="flex items-center gap-2.5 cursor-pointer"
+            className="flex items-center gap-2.5 group cursor-pointer"
           >
-            <DatumLogo className="h-7 w-7 shrink-0" />
-            <span className="text-sm font-semibold tracking-[-0.02em] text-at-ink">
+            <DatumLogo className="h-7 w-7 shrink-0 transition-transform duration-200 group-hover:scale-[1.03]" />
+            <span className="text-[15px] font-semibold tracking-[-0.03em] text-at-ink">
               Datum
             </span>
           </button>
 
           {appPhase === "studio" && (
-            <button
-              type="button"
-              onClick={resetToCapture}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-at-bg border border-at-border hover:border-at-cyan text-[11px] font-medium text-at-muted hover:text-at-ink cursor-pointer transition-colors"
-            >
-              <RotateCcw className="h-3 w-3" />
-              New Space
-            </button>
+            <>
+              <span className="h-4 w-px bg-at-border/80" />
+              <button
+                type="button"
+                onClick={resetToCapture}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-at-muted hover:text-at-ink hover:bg-at-card cursor-pointer transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>New Space</span>
+              </button>
+            </>
           )}
         </div>
 
-        {/* Center: Always-Visible Official Sponsor Bar (Google Gemini & Shopify) */}
-        <div className="hidden md:flex items-center gap-2.5">
+        {/* Center: Mathematically Centered Sponsor Lockup */}
+        <div className="hidden md:flex items-center justify-center">
           <PoweredByBar compact />
         </div>
 
-        {/* Right: Budget Progress + Light/Dark Toggle */}
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-at-bg border border-at-border text-[11px] font-mono tabular-nums-strict">
-            <span className="text-at-muted">Budget</span>
-            <span
-              className={
-                (cartData?.total_usd ?? 0) > budgetUsd
-                  ? "text-at-coral font-semibold"
-                  : "text-at-emerald font-semibold"
-              }
-            >
-              ${(cartData?.total_usd ?? 0).toFixed(2)}
-            </span>
-            <span className="text-at-muted">/ ${budgetUsd.toFixed(2)}</span>
-          </div>
+        {/* Right: Refined Budget Meter Pill + Circular Theme Toggle */}
+        <div className="flex items-center gap-2.5 justify-self-end">
+          {(() => {
+            const spent = cartData?.total_usd ?? 0;
+            const overBudget = spent > budgetUsd;
+            const pct = budgetUsd > 0 ? Math.min(100, Math.round((spent / budgetUsd) * 100)) : 0;
+            return (
+              <div className="hidden sm:flex flex-col justify-center px-3 py-1 rounded-full bg-at-card/80 border border-at-border/80 min-w-[152px]">
+                <div className="flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums-strict leading-tight">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        overBudget
+                          ? "bg-at-coral"
+                          : spent > 0
+                          ? "bg-at-emerald"
+                          : "bg-at-muted/50"
+                      }`}
+                    />
+                    <span className="text-[10px] font-sans uppercase tracking-wider text-at-muted">
+                      Budget
+                    </span>
+                  </span>
+                  <span>
+                    <span
+                      className={
+                        overBudget
+                          ? "text-at-coral font-semibold"
+                          : spent > 0
+                          ? "text-at-ink font-semibold"
+                          : "text-at-muted font-medium"
+                      }
+                    >
+                      ${spent.toFixed(2)}
+                    </span>
+                    <span className="text-at-muted/70"> / ${budgetUsd.toFixed(0)}</span>
+                  </span>
+                </div>
+                <div className="mt-1 h-[2px] w-full rounded-full bg-at-border/60 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      overBudget ? "bg-at-coral" : "bg-at-emerald"
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
 
           <button
             type="button"
             onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-            className="px-2.5 py-1.5 rounded-lg bg-at-bg border border-at-border hover:border-at-cyan text-xs font-medium text-at-ink inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+            className="h-8 w-8 rounded-full bg-at-card/80 border border-at-border/80 hover:border-at-cyan/70 text-at-muted hover:text-at-ink inline-flex items-center justify-center cursor-pointer transition-colors"
+            title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
             aria-label="Toggle Dark or Light Mode"
           >
             {theme === "dark" ? (
-              <>
-                <Moon className="h-3.5 w-3.5 text-at-cyan" />
-                <span className="hidden sm:inline">Dark</span>
-              </>
+              <Sun className="h-3.5 w-3.5 text-at-ink/80" />
             ) : (
-              <>
-                <Sun className="h-3.5 w-3.5 text-at-accent" />
-                <span className="hidden sm:inline">Light</span>
-              </>
+              <Moon className="h-3.5 w-3.5 text-at-ink/80" />
             )}
           </button>
         </div>

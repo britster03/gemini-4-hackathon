@@ -277,12 +277,17 @@ async def render_initial_bundle(
     prompt = (
         "Photorealistically furnish the provided real room photo (Image 1) using ONLY the exact "
         "Shopify product reference images provided after Image 1.\n"
-        "STRICT ARCHITECTURAL & PHYSICS RULES:\n"
+        "STRICT ARCHITECTURAL, PHYSICS & ZERO-PROP RULES:\n"
         "1. Preserve Image 1's exact camera perspective, walls, baseboards, outlets, doors, windows, "
         "flooring, and natural lighting/shadows.\n"
         "2. Match each reference product's exact silhouette, leg/frame geometry, color, and material finish.\n"
         "3. Render every item at its honest physical inch scale relative to the measured zone widths — "
         "NEVER shrink an item artificially and NEVER clip furniture into walls, baseboards, or doors.\n"
+        "4. ZERO UNREQUESTED PROPS OR STAGING CLUTTER: Render ONLY the exact verified Shopify SKUs listed "
+        "below (plus any existing items already present in Image 1). Do NOT invent or add laptops, monitors, "
+        "keyboards, mice, game controllers, tablets, books, plants, mugs, wall art, cables, or decorative "
+        "staging items that are not explicitly listed below. Keep tabletops and desks completely bare "
+        "except for listed tabletop SKUs (such as a listed table lamp).\n"
         f"{protected_txt}\n"
         "Exact SKU Placements:\n"
         + "\n".join(placement_specs)
@@ -340,7 +345,9 @@ async def render_surgical_swap(
         f"with the new verified Shopify product ('{new_sku.title}', {dim_txt}) shown in the attached "
         f"product reference image {zone_txt}.\n"
         "CRITICAL: Keep ALL other furniture items, walls, baseboards, lighting, shadows, and camera "
-        "framing 100% identical to the previous render. Ensure zero wall clipping and honest physical scale."
+        "framing 100% identical to the previous render. Ensure zero wall clipping and honest physical scale. "
+        "ZERO UNREQUESTED PROPS: Do NOT add laptops, monitors, keyboards, game controllers, plants, books, "
+        "or staging clutter that were not explicitly requested in the cart."
     )
 
     ref_inputs: list[tuple[bytes, str]] = []

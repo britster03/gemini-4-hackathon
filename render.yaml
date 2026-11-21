@@ -35,7 +35,4 @@ services:
       - key: NEXT_PUBLIC_USE_MOCK_SSE
         value: "false"
       - key: NEXT_PUBLIC_API_BASE_URL
-        fromService:
-          type: web
-          name: clearbuy-backend
-          property: host
+        value: https://clearbuy-backend-cvvk.onrender.com
